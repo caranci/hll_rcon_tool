@@ -5,6 +5,7 @@ import {
   handle_http_errors,
   showResponse,
 } from "../../utils/fetchUtils";
+import appVersion from "../../utils/appVersion";
 
 const Footer = ({ classes }) => {
   const [repoData, setRepoData] = React.useState([]);
@@ -36,7 +37,7 @@ const Footer = ({ classes }) => {
           display="block"
           gutterBottom
         >
-          UI Version: {process.env.REACT_APP_VERSION} API Version: {apiVersion}{" "}
+          UI Version: {appVersion()} API Version: {apiVersion}{" "}
           - Brought to you by Dr.WeeD,{" "}
           {repoData
             .filter((d) => d.type === "User")

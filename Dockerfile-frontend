@@ -1,4 +1,4 @@
-FROM node:20-buster-slim as build
+FROM node:20-buster as build
 
 RUN apt update && apt install -y git
 
@@ -17,6 +17,7 @@ COPY rcongui/ .
 
 COPY .git/ .git/
 RUN git describe --tags > /code/tag_version
+RUN python app_version.py src/utils/appVersion.js /code/tag_version
 RUN npx browserslist@latest --update-db
 # Normal build
 RUN npm run build
