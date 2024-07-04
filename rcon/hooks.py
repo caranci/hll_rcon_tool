@@ -54,6 +54,7 @@ from rcon.user_config.chat_commands import (
     is_description_word,
     is_help_word,
 )
+from rcon.user_config.webhooks import AdminPingWebhooksUserConfig
 from rcon.user_config.rcon_server_settings import RconServerSettingsUserConfig
 from rcon.user_config.real_vip import RealVipUserConfig
 from rcon.user_config.vac_game_bans import VacGameBansUserConfig
@@ -171,7 +172,9 @@ def chat_commands(rcon: Rcon, struct_log: StructuredLogLineWithMetaData):
     # Description words trigger the entire help menu, test outside the loop
     # since these are global help words
     if is_description_word(chat_words, config.describe_words):
-        description = config.describe_chat_commands()
+        admin_config = AdminPingWebhooksUserConfig.load_from_db()
+        description = admin_config.describe_command()
+        description += config.describe_chat_commands()
         if description:
             rcon.do_message_player(
                 steam_id_64=struct_log["steam_id_64_1"],

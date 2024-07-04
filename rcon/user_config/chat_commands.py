@@ -105,11 +105,16 @@ class ChatCommandsUserConfig(BaseUserConfig):
         return vs
 
     def describe_chat_commands(self) -> list[str]:
-        return [
+        descriptions: list[str] = [
             f"{', '.join(word.words)} | {word.description}"
             for word in self.command_words
             if word.description
         ]
+        description:str = "Shows this help message"
+        if self.describe_words:
+            descriptions += [f"{', '.join(self.describe_words)} | {description}"] 
+
+        return descriptions
 
     @staticmethod
     def save_to_db(values: ChatCommandsType, dry_run=False) -> None:
