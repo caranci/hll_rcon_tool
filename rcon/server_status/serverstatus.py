@@ -89,6 +89,8 @@ def get_our_config() -> ServerStatusUserConfig:
 map_to_pict = {
     "carentan": "maps/carentan.webp",
     "carentan_night": "maps/carentan-night.webp",
+    "carentan_dusk": "maps/carentan-dusk.webp",
+    "carentan_rain": "maps/carentan-rain.webp",
     "driel": "maps/driel.webp",
     "driel_night": "maps/driel-night.webp",
     "elalamein": "maps/elalamein.webp",
@@ -116,6 +118,7 @@ map_to_pict = {
     "stmariedumont": "maps/smdm.webp",
     "stmariedumont_night": "maps/smdm-night.webp",
     "stmereeglise": "maps/sme.webp",
+    "stmereeglise-dawn": "maps/sme-dawn.webp",
     "stmereeglise_night": "maps/sme-night.webp",
     "utahbeach": "maps/utah.webp",
     "utahbeach_night": "maps/utah-night.webp",
