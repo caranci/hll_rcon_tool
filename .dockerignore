@@ -14,3 +14,8 @@ db_data_bu/
 config/
 rcongui/dist/
 rcongui/build/
+.venv/
+.github/
+.mypy_cache
+.pre-commit-config.yaml
+.pytest_cache/

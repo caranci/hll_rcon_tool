@@ -17,6 +17,7 @@ services:
       - common
   postgres:
     image: ${POSTGRES_IMAGE}
+    command: postgres -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
     environment:
       # If a password is not defined this container will fail to create
       POSTGRES_PASSWORD: ${HLL_DB_PASSWORD}
@@ -69,3 +70,27 @@ services:
       - ./logs:/logs/
     networks:
       - common
+  # for postgres local backups
+  pgbackups:
+    image: prodrigestivill/postgres-backup-local
+    restart: always
+    # user: postgres:postgres # Optional: see below
+    volumes:
+      - ./pgbackups:/backups
+    networks:
+      - common
+    links:
+      - postgres
+    depends_on:
+      - postgres
+    environment:
+      - POSTGRES_PASSWORD=${HLL_DB_PASSWORD}
+      - POSTGRES_USER=${HLL_DB_USER}
+      - POSTGRES_DB=${HLL_DB_NAME}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_EXTRA_OPTS=-Z6 --schema=public --blobs
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - HEALTHCHECK_PORT=8080
