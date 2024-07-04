@@ -1,7 +1,7 @@
 import React from "react";
 import { Chip, Grid, Typography } from "@material-ui/core";
 
-export function PlayerVipSummary({ player, isVip }) {
+export function PlayerVipSummary({ player, isVip, note}) {
   const playerNames =
     player && player.get("names")
       ? player.get("names").map((name) => <Chip label={name.get("name")} />)
@@ -27,6 +27,11 @@ export function PlayerVipSummary({ player, isVip }) {
       <Grid item xs={12}>
         <Typography>
           Current VIP Expiration: {vipExpirationTimestamp}
+        </Typography>
+      </Grid>
+      <Grid>
+        <Typography>
+          Current VIP Note: {note}
         </Typography>
       </Grid>
     </Grid>

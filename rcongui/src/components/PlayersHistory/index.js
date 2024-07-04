@@ -35,6 +35,20 @@ import { VipExpirationDialog } from "../VipDialog";
 import { vipListFromServer } from "../VipDialog/vipFromServer";
 import { banListFromServer } from '../PlayersHistory/PlayerTile/PlayerBan'
 
+// return map of console admins
+function consoleAdminsListFromServer(data) {
+  return fromJS(
+    reduce(
+      data,
+      (acc, val) => {
+         acc[val.steam_id_64] = val.name;
+        return acc;
+      },
+      {}
+    )
+  );
+}
+
 const PlayerSummary = ({ player, flag }) => (
   <React.Fragment>
     <Typography variant="body2">
@@ -156,6 +170,7 @@ class PlayersHistory extends React.Component {
       byName: "",
       bySteamId: "",
       blacklistedOnly: false,
+      vipsOnly: false,
       lastSeenFrom: null,
       lastSeenUntil: null,
       isLoading: false,
@@ -169,6 +184,7 @@ class PlayersHistory extends React.Component {
       flags: "",
       country: "",
       bans: new Map(),
+      consoleAdmins: new Map(),
     };
 
     this.getPlayerHistory = this.getPlayerHistory.bind(this);
@@ -178,6 +194,7 @@ class PlayersHistory extends React.Component {
     this.addFlagToPlayer = this.addFlagToPlayer.bind(this);
     this.deleteFlag = this.deleteFlag.bind(this);
     this.loadVips = this.loadVips.bind(this);
+    this.loadConsoleAdmins = this.loadConsoleAdmins.bind(this);
     this.addVip = this.addVip.bind(this);
     this.deleteVip = this.deleteVip.bind(this);
     this.unBanPlayer = this.unBanPlayer.bind(this);
@@ -227,9 +244,10 @@ class PlayersHistory extends React.Component {
       .catch((error) => toast.error("Unable to connect to API " + error));
   }
 
-  addVip(player, expirationTimestamp, forwardVIP) {
+  addVip(player, expirationTimestamp, forwardVIP, note) {
     const steamID64 = player.get("steam_id_64");
-    const name = player.get("names").get(0).get("name");
+    // const name = player.get("names").get(0).get("name");
+    const name = note;
 
     return sendAction("do_add_vip", {
       steam_id_64: steamID64,
@@ -261,6 +279,15 @@ class PlayersHistory extends React.Component {
     );
   }
 
+  // add loadConsoleAdmins()... for use in vip dialog and as indicator on players
+  loadConsoleAdmins() {
+    return this._loadToState("get_admin_ids", false, (data) =>
+      this.setState({
+        consoleAdmins: consoleAdminsListFromServer(data.result),
+      })
+    );
+  }
+
   getPlayerHistory() {
     const {
       pageSize,
@@ -268,6 +295,7 @@ class PlayersHistory extends React.Component {
       byName,
       bySteamId,
       blacklistedOnly,
+      vipsOnly,
       lastSeenFrom,
       lastSeenUntil,
       isWatchedOnly,
@@ -283,6 +311,7 @@ class PlayersHistory extends React.Component {
         player_name: byName,
         steam_id_64: bySteamId,
         blacklisted: blacklistedOnly,
+        is_vip: vipsOnly,
         last_seen_from: lastSeenFrom,
         last_seen_until: lastSeenUntil,
         is_watched: isWatchedOnly,
@@ -311,6 +340,7 @@ class PlayersHistory extends React.Component {
       })
       .then(this.loadVips)
       .then(this.loadBans)
+      .then(this.loadConsoleAdmins)
       .catch(handle_http_errors);
   }
 
@@ -535,6 +565,7 @@ class PlayersHistory extends React.Component {
       byName,
       bySteamId,
       blacklistedOnly,
+      vipsOnly,
       lastSeenFrom,
       lastSeenUntil,
       isLoading,
@@ -543,6 +574,7 @@ class PlayersHistory extends React.Component {
       doConfirmPlayer,
       doVIPPlayer,
       vips,
+      consoleAdmins,
       bans,
       ignoreAccent,
       exactMatch,
@@ -569,6 +601,8 @@ class PlayersHistory extends React.Component {
             setSteamId={(v) => this.setState({ bySteamId: v })}
             blacklistedOnly={blacklistedOnly}
             setBlacklistedOnly={(v) => this.setState({ blacklistedOnly: v })}
+            vipsOnly={vipsOnly}
+            setVipsOnly={(v) => this.setState({ vipsOnly: v })}
             isWatchedOnly={isWatchedOnly}
             setIsWatchedOnly={(v) => this.setState({ isWatchedOnly: v })}
             onSearch={this.getPlayerHistory}
@@ -656,10 +690,11 @@ class PlayersHistory extends React.Component {
         <VipExpirationDialog
           open={doVIPPlayer}
           vips={vips}
+          consoleAdmins={consoleAdmins}
           onDeleteVip={this.onDeleteVip}
           handleClose={() => this.setDoVIPPlayer(false)}
-          handleConfirm={(playerObj, expirationTimestamp, forwardVIP) => {
-            this.addVip(playerObj, expirationTimestamp, forwardVIP);
+          handleConfirm={(playerObj, expirationTimestamp, forwardVIP, note) => {
+            this.addVip(playerObj, expirationTimestamp, forwardVIP, note);
             this.setDoVIPPlayer(false);
           }}
         />

@@ -20,6 +20,7 @@ from rcon.models import (
     PlayerSteamID,
     SteamInfo,
     WatchList,
+    PlayerVIP,
     enter_session,
 )
 from rcon.user_config.rcon_server_settings import RconServerSettingsUserConfig
@@ -141,6 +142,7 @@ def get_players_by_appearance(
     blacklisted=None,
     steam_id_64=None,
     is_watched=None,
+    is_vip=None,
     exact_name_match=False,
     ignore_accent=True,
     flags=None,
@@ -197,6 +199,11 @@ def get_players_by_appearance(
                 query.join(PlayerSteamID.watchlist)
                 .filter(WatchList.is_watched == True)
                 .options(contains_eager(PlayerSteamID.watchlist))
+            )
+
+        if is_vip is True:
+            query = (
+                query.join(PlayerSteamID.vips)
             )
 
         if flags:

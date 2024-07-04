@@ -44,6 +44,8 @@ const SearchBar = ({
   setFlags,
   country,
   setCountry,
+  vipsOnly,
+  setVipsOnly,
 }) => {
   const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
   //const toggleEmojis = () => setShowEmojiPicker(!showEmojiPicker)
@@ -175,6 +177,19 @@ const SearchBar = ({
               />
             }
             label="Watched only"
+            labelPlacement="top"
+          />
+        </Grid>
+        <Grid item>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={vipsOnly}
+                onChange={(e) => setVipsOnly(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="VIPs only"
             labelPlacement="top"
           />
         </Grid>
