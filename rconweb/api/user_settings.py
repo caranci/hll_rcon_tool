@@ -28,6 +28,7 @@ from rcon.user_config.name_kicks import NameKickUserConfig
 from rcon.user_config.rcon_connection_settings import RconConnectionSettingsUserConfig
 from rcon.user_config.rcon_server_settings import RconServerSettingsUserConfig
 from rcon.user_config.scorebot import ScorebotUserConfig
+from rcon.user_config.serverstatus import ServerStatusUserConfig
 from rcon.user_config.log_stream import LogStreamUserConfig
 from rcon.user_config.standard_messages import (
     StandardBroadcastMessagesUserConfig,
@@ -1383,6 +1384,95 @@ def set_rcon_server_settings_config(request):
         cls, data, command_name, request.user.username
     )
 
+    if response:
+        return response
+
+    return api_response(
+        result=True,
+        command=command_name,
+        arguments=data,
+        failed=False,
+    )
+
+
+@csrf_exempt
+@login_required()
+@permission_required("api.can_view_serverstatus_config", raise_exception=True)
+@require_http_methods(["GET"])
+def get_serverstatus_config(request):
+    command_name = "get_serverstatus_config"
+
+    try:
+        config = ServerStatusUserConfig.load_from_db()
+    except Exception as e:
+        logger.exception(e)
+        return api_response(command=command_name, error=str(e), failed=True)
+    return api_response(
+        result=config.model_dump(),
+        command=command_name,
+        failed=False,
+    )
+
+
+@csrf_exempt
+@login_required()
+@require_http_methods(["GET"])
+def describe_serverstatus_config(request):
+    command_name = "describe_serverstatus_config"
+
+    try:
+        config = ServerStatusUserConfig.load_from_db()
+    except Exception as e:
+        logger.exception(e)
+        return api_response(command=command_name, error=str(e), failed=True)
+
+    return api_response(
+        result=ServerStatusUserConfig.model_json_schema(),
+        command=command_name,
+        failed=False,
+    )
+
+
+@csrf_exempt
+@login_required()
+@permission_required("api.can_change_serverstatus_config", raise_exception=True)
+@require_http_methods(["POST"])
+@require_content_type()
+def validate_serverstatus_config(request):
+    command_name = "validate_serverstatus_config"
+    data = _get_data(request)
+
+    response = _validate_user_config(
+        ServerStatusUserConfig,
+        data=data,
+        command_name=command_name,
+        dry_run=True,
+    )
+    if response:
+        return response
+
+    return api_response(
+        result=True,
+        command=command_name,
+        arguments=data,
+        failed=False,
+    )
+
+
+@csrf_exempt
+@login_required()
+@permission_required("api.can_change_serverstatus_config", raise_exception=True)
+@record_audit
+@require_http_methods(["POST"])
+@require_content_type()
+def set_serverstatus_config(request):
+    command_name = "set_serverstatus_config"
+    cls = ServerStatusUserConfig
+    data = _get_data(request)
+
+    response = _audit_user_config_differences(
+        cls, data, command_name, request.user.username
+    )
     if response:
         return response
 

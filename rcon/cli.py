@@ -25,6 +25,7 @@ from rcon.server_stats import (
     save_server_stats_since_inception,
 )
 from rcon.settings import SERVER_INFO
+import rcon.server_status.serverstatus
 from rcon.steam_utils import enrich_db_users
 from rcon.user_config.auto_settings import AutoSettingsConfig
 from rcon.user_config.log_stream import LogStreamUserConfig
@@ -126,6 +127,11 @@ def run_expiring_vips():
 @cli.command(name="automod")
 def run_automod():
     automod.run()
+
+
+@cli.command(name="server_status")
+def run_server_status():
+    rcon.server_status.serverstatus.run()
 
 
 @cli.command(name="log_recorder")

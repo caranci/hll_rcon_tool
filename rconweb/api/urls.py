@@ -198,6 +198,10 @@ endpoints: list[tuple[str, Callable]] = [
         user_settings.validate_server_name_change_config,
     ),
     ("set_server_name_change_config", user_settings.set_server_name_change_config),
+    ("get_serverstatus_config", user_settings.get_serverstatus_config),
+    ("describe_serverstatus_config", user_settings.describe_serverstatus_config),
+    ("validate_serverstatus_config", user_settings.validate_serverstatus_config),
+    ("set_serverstatus_config", user_settings.set_serverstatus_config),
     ("get_log_line_webhook_config", user_settings.get_log_line_webhook_config),
     (
         "describe_log_line_webhook_config",
