@@ -12,13 +12,14 @@ import {
   Typography,
 } from "@material-ui/core";
 import DeleteIcon from "@material-ui/icons/Delete";
+import EditIcon from '@material-ui/icons/Edit';
 import AddIcon from "@material-ui/icons/Add";
 import { ForwardCheckBox } from "../commonComponent";
 import { get, handle_http_errors, showResponse } from "../../utils/fetchUtils";
 
 import moment from "moment";
 import { VipExpirationDialog } from "../VipDialog";
-import { fromJS } from "immutable";
+import { fromJS, Map } from "immutable";
 import { vipListFromServer } from "../VipDialog/vipFromServer";
 
 const AddVipItem = ({
@@ -176,6 +177,7 @@ const VipEditableList = ({
   onAdd,
   forward,
   onFowardChange,
+  consoleAdmins,
 }) => {
   const [name, setName] = React.useState("");
   const [steamID64, setSteamID64] = React.useState("");
@@ -208,6 +210,21 @@ const VipEditableList = ({
     );
   }
 
+  function onOpenEditVipDialog(player) {
+    console.log(`vips.js onOpenEditVipDialog player=${player}`)
+    return setVIPPlayer(
+      fromJS({
+        names: [
+          {
+            name: player.name,
+          },
+        ],
+        steam_id_64: player.steam_id_64,
+        vip_expiration: player.vip_expiration,
+      })
+    );
+  }
+
   return (
     <React.Fragment>
       <List dense>
@@ -229,6 +246,13 @@ const VipEditableList = ({
             <ListItemSecondaryAction>
               <IconButton
                 edge="end"
+                aria-label="edit"
+                onClick={() => onOpenEditVipDialog(obj)}
+              >
+                <EditIcon />
+              </IconButton>              
+              <IconButton
+                edge="end"
                 aria-label="delete"
                 onClick={() => onDelete(obj.name, obj.steam_id_64)}
               >
@@ -247,16 +271,23 @@ const VipEditableList = ({
         />
         <ForwardCheckBox bool={forward} onChange={onFowardChange} />
         <VipExpirationDialog
+          // todo... playername using steamid from VIPPlayer
           open={VIPPlayer}
           vips={vipListFromServer(peopleList)}
+          consoleAdmins={consoleAdmins}
           onDeleteVip={(playerObj) =>
             onDelete(nameOf(playerObj), playerObj.get("steam_id_64"))
           }
           handleClose={() => setVIPPlayer(false)}
-          handleConfirm={(playerObj, expirationTimestamp) => {
+          XXXhandleConfirm={(playerObj, expirationTimestamp, forwardVIP, note) => {
+            this.addVip(playerObj, expirationTimestamp, forwardVIP, note);
+            this.setDoVIPPlayer(false);
+          }}          
+          handleConfirm={(playerObj, expirationTimestamp, forwardVIP, note) => {
+            console.log(`vips.js playerObj=${playerObj}, forwardVIP=${forwardVIP}, note=${note}`);
             console.log(`vips.js expirationTimestamp=${expirationTimestamp}`);
             onAdd(
-              nameOf(playerObj),
+              note,
               playerObj.get("steam_id_64"),
               expirationTimestamp
             );

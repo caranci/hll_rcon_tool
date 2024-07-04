@@ -195,6 +195,7 @@ def players_history(request):
         "player_name": str,
         "blacklisted": bool,
         "is_watched": bool,
+        "is_vip": bool,
         "steam_id_64": str,
         "page": int,
         "page_size": int,

@@ -238,9 +238,6 @@ class PlayerView extends Component {
     localStorage.setItem("player_sort", sortType);
   }
 
-  componentDidMount() {
-    this.loadPlayers();
-  }
   render() {
     const { classes, isFullScreen, onFullScreen } = this.props;
     const {

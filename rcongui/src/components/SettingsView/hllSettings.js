@@ -28,6 +28,8 @@ import VoteMapConfig from "./voteMapConfig";
 import HelpIcon from "@material-ui/icons/Help";
 import MapRotation from "../MapManager";
 import MapRotationSettings from "../MapManager/settings";
+import { reduce } from "lodash";
+import { fromJS } from "immutable";
 
 const ProfanityFiler = ({
   words,
@@ -404,12 +406,27 @@ class HLLSettings extends React.Component {
           <CollapseCard
             title="Manage VIPs"
             classes={classes}
-            onExpand={this.loadVips}
+            onExpand={() => {
+              this.loadVips();
+              this.loadAdmins();
+            }}
           >
             <VipUpload classes={classes} />
             <p>Changes are applied immediately</p>
             <VipEditableList
               peopleList={vips}
+              consoleAdmins={
+                fromJS(
+                  reduce(
+                    admins,
+                    (acc, val) => {
+                      acc[val.steam_id_64] = val.name;
+                      return acc;
+                    },
+                    {}
+                  )
+                )
+              }
               classes={classes}
               forward={forwardVIP}
               onFowardChange={() => this.toggle("forwardVIP")}

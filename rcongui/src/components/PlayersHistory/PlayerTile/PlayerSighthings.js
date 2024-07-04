@@ -3,7 +3,7 @@ import React from "react";
 import Tooltip from "@material-ui/core/Tooltip";
 import moment from "moment";
 
-export const PlayerSighthings = ({ classes, player }) => {
+export const PlayerSighthings = ({ classes, player, vips }) => {
   const first_seen = moment(player.get("first_seen_timestamp_ms"));
   const last_seen = moment(player.get("last_seen_timestamp_ms"));
 
@@ -12,6 +12,7 @@ export const PlayerSighthings = ({ classes, player }) => {
     vip_expiration = moment(player.get("vip_expiration"));
   }
 
+  const vip_note = vips.get(player.get("steam_id_64"));
   const now = moment();
   const humanizedExpiration = moment
     .duration(now.diff(vip_expiration))
@@ -25,9 +26,9 @@ export const PlayerSighthings = ({ classes, player }) => {
       </small>
     );
   } else if (vip_expiration?.isSameOrAfter(moment().add(100, "years"))) {
-    vipDisplay = <small>VIP Never Expires</small>;
+    vipDisplay = <small>VIP Never Expires [{vip_note}]</small>;
   } else if (vip_expiration) {
-    vipDisplay = <small>VIP expires in {humanizedExpiration}</small>;
+    vipDisplay = <small>VIP expires in {humanizedExpiration} [{vip_note}]</small>;
   }
 
   return (

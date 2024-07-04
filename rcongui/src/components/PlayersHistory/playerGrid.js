@@ -76,7 +76,7 @@ const PlayerGrid = withWidth()(
                         onDeleteFlag={onDeleteFlag}
                       />
                       <PlayerBan classes={classes} bans={bans} player={player} />
-                      <PlayerSighthings classes={classes} player={player} />
+                      <PlayerSighthings classes={classes} player={player} vips={vips} />
                       <PlayerPenalties classes={classes} player={player} />
                       <Grid container justify="center">
                         <Grid item>
