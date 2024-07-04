@@ -54,6 +54,7 @@ import {
   ExpiredVIP,
   GTXNameChange,
   ChatCommands,
+  ServerStatus,
   LogStream
 } from "./components/UserSettings/miscellaneous";
 
@@ -703,6 +704,17 @@ function App() {
                           setEndpoint="set_server_name_change_config"
                           validateEndpoint="validate_server_name_change_config"
                           describeEndpoint="describe_server_name_change_config"
+                        />
+                      </Grid>
+                    </Route>
+                    <Route path="/settings/server-status">
+                      <Grid container spacing={2}>
+                        <ServerStatus
+                          description="Server Status"
+                          getEndpoint="get_serverstatus_config"
+                          setEndpoint="set_serverstatus_config"
+                          validateEndpoint="validate_serverstatus_config"
+                          describeEndpoint="describe_serverstatus_config"
                         />
                       </Grid>
                     </Route>

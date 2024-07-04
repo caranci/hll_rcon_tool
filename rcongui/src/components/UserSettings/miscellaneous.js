@@ -633,6 +633,32 @@ export const GTXNameChange = ({
   );
 };
 
+export const ServerStatus = ({
+  description,
+  getEndpoint,
+  setEndpoint,
+  validateEndpoint,
+  describeEndpoint,
+}) => {
+  const notes = `
+    {
+        /*
+            Server Status config notes...
+        */
+    `;
+
+  return (
+    <UserSetting
+      description={description}
+      getEndpoint={getEndpoint}
+      setEndpoint={setEndpoint}
+      validateEndpoint={validateEndpoint}
+      describeEndpoint={describeEndpoint}
+      notes={notes}
+    />
+  );
+};
+
 export const LogStream = ({
   description,
   getEndpoint,
