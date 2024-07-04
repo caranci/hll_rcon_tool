@@ -1,0 +1,4 @@
+docker compose -f compose.yaml -f compose.build.yaml build
+#docker compose -f compose.yaml build
+docker tag caranci/hll_rcon:latest caranci/hll_rcon:`git describe --tags`
+docker tag caranci/hll_rcon_frontend:latest caranci/hll_rcon_frontend:`git describe --tags`
