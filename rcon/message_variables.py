@@ -11,7 +11,7 @@ from rcon.maps import safe_get_map_name
 from rcon.types import CachedLiveGameStats, MessageVariable, StatTypes, VipIdType
 from rcon.user_config.rcon_server_settings import RconServerSettingsUserConfig
 from rcon.user_config.webhooks import AdminPingWebhooksUserConfig
-from rcon.utils import SafeStringFormat
+from rcon.utils import SafeStringFormat, INDEFINITE_VIP_DATE
 
 logger = getLogger(__name__)
 
@@ -105,8 +105,12 @@ def _is_vip(steam_id_64: str | None = None, rcon: Rcon | None = None) -> bool:
 
 def _vip_expiration(
     steam_id_64: str | None = None, rcon: Rcon | None = None
-) -> datetime | None:
+) -> datetime | None | str:
     vip = _vip_status(steam_id_64=steam_id_64, rcon=rcon)
+
+    vip_expiration: datetime | None = vip["vip_expiration"] if vip else None
+    if vip_expiration and (vip_expiration >= INDEFINITE_VIP_DATE):
+        return "Never"
 
     return vip["vip_expiration"] if vip else None
 

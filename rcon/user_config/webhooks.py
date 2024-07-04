@@ -138,6 +138,16 @@ class AdminPingWebhooksUserConfig(BaseMentionWebhookUserConfig):
 
         return sorted(list(processed_words))
 
+    def describe_command(self) -> list[str]:
+        description: str = (
+            "Alerts admin staff. Please mention player and infraction in the message."
+        )
+        return (
+            [f"{', '.join(self.trigger_words)} | {description}"]
+            if self.trigger_words
+            else []
+        )
+
     @staticmethod
     def save_to_db(values: AdminPingWebhookType, dry_run=False) -> None:
         raw_hooks = values.get("hooks")
