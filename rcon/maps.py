@@ -467,6 +467,7 @@ LAYERS = {
             gamemode=Gamemode.OFFENSIVE,
             attackers=Team.AXIS,
         ),
+        # PHL v1 (U15.2 and before)
         Layer(
             id="purpleheartlane_warfare",
             map=MAPS["purpleheartlane"],
@@ -489,6 +490,48 @@ LAYERS = {
             map=MAPS["purpleheartlane"],
             gamemode=Gamemode.OFFENSIVE,
             attackers=Team.AXIS,
+        ),
+        # PHL v2 (U15.3 and after)
+        Layer(
+            id="PHL_L_1944_Warfare",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.WARFARE,
+        ),
+        Layer(
+            id="PHL_L_1944_Warfare_Night",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.WARFARE,
+            environment=Environment.NIGHT,
+        ),
+        Layer(
+            id="PHL_L_1944_OffensiveUS",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.OFFENSIVE,
+            attackers=Team.ALLIES,
+        ),
+        Layer(
+            id="PHL_L_1944_OffensiveGER",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.OFFENSIVE,
+            attackers=Team.AXIS,
+        ),
+        Layer(
+            id="PHL_S_1944_Rain_P_Skirmish",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.CONTROL,
+            environment=Environment.RAIN,
+        ),
+        Layer(
+            id="PHL_S_1944_Morning_P_Skirmish",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.CONTROL,
+            environment=Environment.DAWN,
+        ),
+        Layer(
+            id="PHL_S_1944_Night_P_Skirmish",
+            map=MAPS["purpleheartlane"],
+            gamemode=Gamemode.CONTROL,
+            environment=Environment.NIGHT,
         ),
         Layer(
             id="carentan_warfare",
@@ -576,6 +619,18 @@ LAYERS = {
             map=MAPS["hill400"],
             gamemode=Gamemode.OFFENSIVE,
             attackers=Team.AXIS,
+        ),
+        Layer(
+            id="HIL_S_1944_Day_P_Skirmish",
+            map=MAPS["hill400"],
+            gamemode=Gamemode.CONTROL,
+            environment=Environment.DAY,
+        ),
+        Layer(
+            id="HIL_S_1944_Dusk_P_Skirmish",
+            map=MAPS["hill400"],
+            gamemode=Gamemode.CONTROL,
+            environment=Environment.DUSK,
         ),
         Layer(
             id="foy_warfare",
