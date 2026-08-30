@@ -1,6 +1,10 @@
+import importlib
 import os
+import sys
+from unittest import mock
 
 os.environ.setdefault("HLL_MAINTENANCE_CONTAINER", "1")
+os.environ.setdefault("SERVER_NUMBER", "1")
 
 import textwrap
 import time
@@ -21,6 +25,9 @@ from rcon.process_supervisor.logging_setup import configure_logging
 from rcon.process_supervisor.manager import ProcessSupervisor
 from rcon.process_supervisor.rpc import start_rpc_server
 from rcon.process_supervisor.states import ProcessState
+
+
+RAW_EXEC_PROGRAMS = frozenset({"workers", "cron", "scheduler"})
 
 
 def test_interpolate_env_variable():
@@ -302,3 +309,308 @@ def test_autostart_on_run(tmp_path):
     threading.Thread(target=shutdown_soon, daemon=True).start()
     exit_code = supervisor.run()
     assert exit_code == 0
+
+
+def _repo_supervisord_config() -> SupervisorConfig:
+    config_path = Path(__file__).resolve().parents[1] / "config" / "supervisord.conf"
+    env = {
+        "SERVER_NUMBER": "1",
+        "HLL_REDIS_URL": "redis://localhost:6379/0",
+        "HLL_REDIS_HOST": "localhost",
+        "HLL_REDIS_PORT": "6379",
+        "HLL_REDIS_DB": "0",
+    }
+    return load_config(config_path, env)
+
+
+def test_registered_programs_match_supervisord_conf():
+    from rcon.process_supervisor.registry import REGISTERED_PROGRAMS
+
+    config = _repo_supervisord_config()
+    python_programs = set(config.programs) - RAW_EXEC_PROGRAMS
+    assert REGISTERED_PROGRAMS == python_programs
+
+
+def test_command_extra_log_recorder_scoreboard_cron():
+    from rcon.process_supervisor.registry import command_extra, worker_argv
+
+    config = _repo_supervisord_config()
+
+    log_recorder = config.programs["log_recorder"]
+    assert command_extra(log_recorder) == ["-i", "10"]
+    assert worker_argv(log_recorder)[-3:] == ["--", "-i", "10"]
+
+    scoreboard = config.programs["scoreboard"]
+    assert command_extra(scoreboard) == []
+    assert worker_argv(scoreboard) == [
+        sys.executable,
+        "-m",
+        "rcon.process_supervisor.worker",
+        "scoreboard",
+        "--",
+    ]
+
+    cron = config.programs["cron"]
+    assert command_extra(cron) is None
+    assert worker_argv(cron) == cron.command
+
+
+def test_worker_unknown_program_exits_nonzero(monkeypatch):
+    from rcon.process_supervisor.worker.__main__ import main
+
+    monkeypatch.setattr("rcon.models.install_unaccent", lambda: None)
+    assert main(["unknown_program"]) != 0
+
+
+def test_log_loop_hook_modules_frozen_list():
+    from rcon.process_supervisor.registry import LOG_LOOP_HOOK_MODULES
+
+    assert LOG_LOOP_HOOK_MODULES == (
+        "rcon.hooks",
+        "rcon.auto_kick",
+        "rcon.automods.tk_autoban",
+        "rcon.discord_chat",
+        "rcon.recent_actions",
+        "rcon.watchlist",
+        "rcon.automods.automod",
+    )
+
+
+def test_worker_does_not_configure_arbiter_logging():
+    worker_main = (
+        Path(__file__).resolve().parents[1]
+        / "rcon"
+        / "process_supervisor"
+        / "worker"
+        / "__main__.py"
+    )
+    source = worker_main.read_text()
+    assert "configure_logging" not in source
+    assert "logging_setup" not in source
+
+
+def test_run_program_unknown_raises_keyerror():
+    from rcon.process_supervisor.registry import run_program
+
+    with pytest.raises(KeyError):
+        run_program("not_a_program", [])
+
+
+def test_ensure_log_loop_hooks_imports_modules(monkeypatch):
+    from rcon.process_supervisor.registry import LOG_LOOP_HOOK_MODULES, ensure_log_loop_hooks
+
+    imported: list[str] = []
+
+    def fake_import_module(name: str):
+        imported.append(name)
+        return object()
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+    ensure_log_loop_hooks()
+    assert imported == list(LOG_LOOP_HOOK_MODULES)
+
+
+def test_supervisor_main_missing_config(tmp_path):
+    from rcon.process_supervisor.__main__ import main
+
+    missing = tmp_path / "missing.conf"
+    assert main(["-c", str(missing)]) == 1
+
+
+def test_supervisor_main_starts_and_shuts_down(tmp_path, monkeypatch):
+    from rcon.process_supervisor import __main__ as supervisor_main
+
+    config_text = textwrap.dedent(
+        """
+        [program:demo]
+        command=/bin/sleep 30
+        autostart=false
+        startsecs=0
+        environment=LOGGING_FILENAME=demo.log
+        """
+    )
+    config_path = tmp_path / "supervisord.conf"
+    config_path.write_text(config_text)
+
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    supervisor.request_shutdown()
+
+    monkeypatch.setattr(supervisor_main, "load_config", lambda _path: supervisor.config)
+    monkeypatch.setattr(supervisor_main, "configure_logging", lambda _config: None)
+    monkeypatch.setattr(supervisor_main, "ProcessSupervisor", lambda _config: supervisor)
+    monkeypatch.setattr(
+        supervisor_main,
+        "start_rpc_server",
+        lambda *_args, **_kwargs: mock.Mock(shutdown=lambda: None),
+    )
+
+    assert supervisor_main.main(["-c", str(config_path)]) == 0
+
+
+def test_default_config_path_uses_numbered_file(monkeypatch):
+    from rcon.process_supervisor.__main__ import _default_config_path
+
+    monkeypatch.setenv("SERVER_NUMBER", "2")
+    monkeypatch.setattr(
+        "rcon.process_supervisor.__main__.os.path.exists",
+        lambda path: path == "/config/supervisord_2.conf",
+    )
+    assert _default_config_path() == "/config/supervisord_2.conf"
+
+
+def test_interpolate_missing_env_raises():
+    with pytest.raises(KeyError, match="MISSING_VAR"):
+        interpolate("value_%(ENV_MISSING_VAR)s", {})
+
+
+def test_parse_environment_skips_blank_items():
+    assert parse_environment("GOOD=1,,KEY=val") == {"GOOD": "1", "KEY": "val"}
+
+
+def test_program_config_default_log_path():
+    program = ProgramConfig(name="demo", command=["/bin/true"])
+    path = program.log_path({"LOGGING_PATH": "/tmp/logs"})
+    assert path == Path("/tmp/logs/demo.log")
+
+
+def test_load_config_port_without_host(tmp_path):
+    config_text = textwrap.dedent(
+        """
+        [inet_http_server]
+        port=9123
+
+        [program:demo]
+        command=/bin/true
+        autostart=false
+        """
+    )
+    config_path = tmp_path / "supervisord.conf"
+    config_path.write_text(config_text)
+    config = load_config(config_path)
+    assert config.rpc_host == "0.0.0.0"
+    assert config.rpc_port == 9123
+
+
+def test_load_config_skips_program_without_command(tmp_path):
+    config_text = textwrap.dedent(
+        """
+        [program:empty]
+        autostart=false
+        """
+    )
+    config_path = tmp_path / "supervisord.conf"
+    config_path.write_text(config_text)
+    config = load_config(config_path)
+    assert config.programs == {}
+
+
+def test_registered_program_spawns_worker_argv(tmp_path):
+    from rcon.process_supervisor.process import ManagedProcess
+    from rcon.process_supervisor.registry import worker_argv
+
+    config = ProgramConfig(
+        name="broadcasts",
+        command=["/code/manage.py", "broadcast_loop"],
+        environment={"LOGGING_FILENAME": "broadcasts.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    process.spawn()
+    assert process.popen is not None
+    assert process.popen.args == worker_argv(config)
+    process.stop()
+
+
+def test_spawn_failure_sets_backoff(tmp_path, monkeypatch):
+    from rcon.process_supervisor.process import ManagedProcess
+
+    config = ProgramConfig(
+        name="demo",
+        command=["/bin/sleep", "1"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    monkeypatch.setattr(
+        "rcon.process_supervisor.process.subprocess.Popen",
+        mock.Mock(side_effect=OSError("spawn failed")),
+    )
+    process.spawn()
+    assert process.state == ProcessState.BACKOFF
+    assert "spawn failed" in process.spawnerr
+
+
+def test_start_already_running_raises(tmp_path):
+    from rcon.process_supervisor.process import ManagedProcess
+
+    config = ProgramConfig(
+        name="demo",
+        command=["/bin/sleep", "30"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    process.spawn()
+    with pytest.raises(RuntimeError, match="already started"):
+        process.start()
+    process.stop()
+
+
+def test_process_info_descriptions(tmp_path):
+    from rcon.process_supervisor.process import ManagedProcess
+
+    config = ProgramConfig(
+        name="demo",
+        command=["/bin/sleep", "30"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    assert process.process_info()["description"] == "Not started"
+
+    process.state = ProcessState.FATAL
+    assert "too quickly" in process.process_info()["description"]
+
+    process.state = ProcessState.EXITED
+    process.exitstatus = 3
+    assert process.process_info()["description"] == "Exited with exit status 3"
+
+
+def test_autorestart_always_and_never(tmp_path):
+    from rcon.process_supervisor.process import ManagedProcess
+
+    always = ProgramConfig(
+        name="demo",
+        command=["/bin/true"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        autorestart=True,
+        startsecs=0,
+    )
+    process = ManagedProcess(config=always, base_environ={"LOGGING_PATH": str(tmp_path)})
+    assert process._should_autorestart(0) is True
+
+    never = ProgramConfig(
+        name="demo",
+        command=["/bin/true"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        autorestart=False,
+        startsecs=0,
+    )
+    process = ManagedProcess(config=never, base_environ={"LOGGING_PATH": str(tmp_path)})
+    assert process._should_autorestart(1) is False
+
+
+def test_backoff_manual_stop_becomes_stopped(tmp_path):
+    from rcon.process_supervisor.process import ManagedProcess
+
+    config = ProgramConfig(
+        name="demo",
+        command=["/bin/sleep", "1"],
+        environment={"LOGGING_FILENAME": "demo.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    process.state = ProcessState.BACKOFF
+    process.manual_stop = True
+    process._retry_from_backoff()
+    assert process.state == ProcessState.STOPPED

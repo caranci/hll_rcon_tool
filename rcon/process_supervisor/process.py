@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rcon.process_supervisor.config import ProgramConfig
+from rcon.process_supervisor.registry import worker_argv
 from rcon.process_supervisor.states import ProcessState, STATENAME
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ class ManagedProcess:
         try:
             self._log_handle = open(self.log_file, "ab", buffering=0)
             self.popen = subprocess.Popen(
-                self.config.command,
+                worker_argv(self.config),
                 cwd=self.config.directory,
                 env=child_env,
                 stdout=self._log_handle,
