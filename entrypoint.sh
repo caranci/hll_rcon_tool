@@ -76,5 +76,5 @@ fi
   sleep 10
   env >> /etc/environment
   export LOGGING_FILENAME=supervisor_$SERVER_NUMBER.log
-  supervisord -c /config/supervisord_$SERVER_NUMBER.conf || supervisord -c /config/supervisord.conf
+  python -m rcon.process_supervisor -c /config/supervisord_$SERVER_NUMBER.conf || python -m rcon.process_supervisor -c /config/supervisord.conf
 fi
