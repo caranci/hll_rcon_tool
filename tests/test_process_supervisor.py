@@ -10,11 +10,14 @@ from xmlrpc.client import Fault, ServerProxy
 import pytest
 
 from rcon.process_supervisor.config import (
+    ProgramConfig,
     SupervisorConfig,
     interpolate,
     load_config,
+    parse_byte_size,
     parse_environment,
 )
+from rcon.process_supervisor.logging_setup import configure_logging
 from rcon.process_supervisor.manager import ProcessSupervisor
 from rcon.process_supervisor.rpc import start_rpc_server
 from rcon.process_supervisor.states import ProcessState
@@ -92,6 +95,60 @@ def test_load_repo_supervisord_conf():
         "scheduler",
     }
     assert expected.issubset(set(config.programs))
+    assert config.logfile == "/logs/supervisord.log"
+    assert config.logfile_maxbytes == 50 * 1024 * 1024
+    assert config.logfile_backups == 10
+
+
+def test_parse_byte_size():
+    assert parse_byte_size("50MB") == 50 * 1024 * 1024
+    assert parse_byte_size("1024") == 1024
+
+
+def test_load_config_parses_supervisord_logfile(tmp_path):
+    config_text = textwrap.dedent(
+        """
+        [supervisord]
+        logfile=%(ENV_LOG_DIR)s/supervisord.log
+        logfile_maxbytes=10MB
+        logfile_backups=3
+
+        [program:demo]
+        command=/bin/true
+        autostart=false
+        """
+    )
+    config_path = tmp_path / "supervisord.conf"
+    config_path.write_text(config_text)
+    config = load_config(config_path, {"LOG_DIR": str(tmp_path / "logs")})
+    assert config.logfile == str(tmp_path / "logs" / "supervisord.log")
+    assert config.logfile_maxbytes == 10 * 1024 * 1024
+    assert config.logfile_backups == 3
+
+
+def test_arbiter_logs_spawn_and_stop_to_logfile(tmp_path):
+    logfile = tmp_path / "supervisord.log"
+    config = SupervisorConfig(
+        programs={
+            "demo": ProgramConfig(
+                name="demo",
+                command=["/bin/sleep", "30"],
+                environment={"LOGGING_FILENAME": "demo.log"},
+                autostart=False,
+                startsecs=0,
+            )
+        },
+        logfile=str(logfile),
+    )
+    configure_logging(config)
+    supervisor = ProcessSupervisor(config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    supervisor.start_process("demo")
+    supervisor.stop_process("demo")
+
+    contents = logfile.read_text()
+    assert "Spawned 'demo'" in contents
+    assert "entered RUNNING state" in contents
+    assert "Stopped process 'demo' via RPC" in contents
 
 
 def _make_supervisor(tmp_path: Path, command: list[str], **overrides) -> ProcessSupervisor:

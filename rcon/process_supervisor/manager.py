@@ -56,6 +56,7 @@ class ProcessSupervisor:
                     f"ALREADY_STARTED: {name}",
                 )
             proc.start(wait=True)
+            logger.info("Started process '%s' via RPC", name)
             return True
 
     def stop_process(self, name: str) -> bool:
@@ -68,6 +69,7 @@ class ProcessSupervisor:
                 )
             proc.stop(wait=True)
             proc.state = ProcessState.STOPPED
+            logger.info("Stopped process '%s' via RPC", name)
             return True
 
     def autostart(self) -> None:

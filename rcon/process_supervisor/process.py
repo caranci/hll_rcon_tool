@@ -110,6 +110,7 @@ class ManagedProcess:
             )
         except OSError as exc:
             self.spawnerr = str(exc)
+            logger.error("Failed to spawn '%s': %s", self.config.name, exc)
             self.state = ProcessState.BACKOFF
             self._close_log_handle()
             return
@@ -120,9 +121,11 @@ class ManagedProcess:
         self.stop_time = 0
         self.exitstatus = 0
         self.state = ProcessState.STARTING
+        logger.info("Spawned '%s' with pid %s", self.config.name, self.pid)
 
         if self.config.startsecs == 0:
             self.state = ProcessState.RUNNING
+            logger.info("Process '%s' entered RUNNING state", self.config.name)
 
     def stop(self, wait: bool = True) -> None:
         if not self.is_running() or self.popen is None:
@@ -130,6 +133,7 @@ class ManagedProcess:
 
         self.manual_stop = True
         self.state = ProcessState.STOPPING
+        logger.info("Stopping '%s' (pid %s)", self.config.name, self.pid)
         sig = _SIGNALS.get(self.config.stopsignal, signal.SIGTERM)
         try:
             os.killpg(self.popen.pid, sig)
@@ -179,6 +183,7 @@ class ManagedProcess:
             time.sleep(0.05)
         if self.popen and self.popen.poll() is None:
             self.state = ProcessState.RUNNING
+            logger.info("Process '%s' entered RUNNING state", self.config.name)
 
     def tick(self) -> None:
         if self.popen is None:
@@ -193,38 +198,83 @@ class ManagedProcess:
                 and time.time() - self.spawn_time >= self.config.startsecs
             ):
                 self.state = ProcessState.RUNNING
+                logger.info("Process '%s' entered RUNNING state", self.config.name)
             return
 
         self._handle_exit(returncode)
 
     def _handle_exit(self, returncode: int) -> None:
+        exited_pid = self.pid
         if self.state == ProcessState.STOPPING:
             self._finalize_exit(returncode)
+            logger.info(
+                "Process '%s' (pid %s) stopped with status %s",
+                self.config.name,
+                exited_pid,
+                returncode,
+            )
             return
 
         if self.state == ProcessState.STARTING:
             self._finalize_exit(returncode)
             if self.manual_stop:
                 self.state = ProcessState.STOPPED
+                logger.info(
+                    "Process '%s' (pid %s) exited during start with status %s; now STOPPED",
+                    self.config.name,
+                    exited_pid,
+                    returncode,
+                )
                 return
             if self.retries_remaining > 0:
                 self.retries_remaining -= 1
                 self.state = ProcessState.BACKOFF
                 self._backoff_until = time.time() + 1.0
+                logger.info(
+                    "Process '%s' (pid %s) exited during start with status %s; now BACKOFF (%s retries left)",
+                    self.config.name,
+                    exited_pid,
+                    returncode,
+                    self.retries_remaining,
+                )
             else:
                 self.state = ProcessState.FATAL
+                logger.error(
+                    "Process '%s' (pid %s) exited during start with status %s; now FATAL",
+                    self.config.name,
+                    exited_pid,
+                    returncode,
+                )
             return
 
         self._finalize_exit(returncode)
         if self.manual_stop:
             self.state = ProcessState.STOPPED
+            logger.info(
+                "Process '%s' (pid %s) exited with status %s; now STOPPED",
+                self.config.name,
+                exited_pid,
+                returncode,
+            )
             return
 
         if self._should_autorestart(returncode):
             self.state = ProcessState.BACKOFF
             self._backoff_until = time.time() + 1.0
+            logger.info(
+                "Process '%s' (pid %s) exited with status %s; now BACKOFF (autorestart)",
+                self.config.name,
+                exited_pid,
+                returncode,
+            )
         else:
             self.state = ProcessState.EXITED
+            logger.info(
+                "Process '%s' (pid %s) exited with status %s; now EXITED",
+                self.config.name,
+                exited_pid,
+                returncode,
+            )
 
     def _should_autorestart(self, returncode: int) -> bool:
         policy = self.config.autorestart

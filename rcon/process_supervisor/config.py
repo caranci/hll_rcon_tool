@@ -85,11 +85,30 @@ class ProgramConfig:
         return Path(logging_path) / f"{self.name}.log"
 
 
+def parse_byte_size(value: str) -> int:
+    """Parse Supervisord-style size strings (e.g. ``50MB``) to bytes."""
+
+    normalized = value.strip().upper()
+    multipliers = {
+        "KB": 1024,
+        "MB": 1024**2,
+        "GB": 1024**3,
+    }
+    for suffix, multiplier in multipliers.items():
+        if normalized.endswith(suffix):
+            number = normalized[: -len(suffix)].strip()
+            return int(float(number) * multiplier)
+    return int(normalized)
+
+
 @dataclass
 class SupervisorConfig:
     programs: dict[str, ProgramConfig]
     rpc_host: str = "0.0.0.0"
     rpc_port: int = 9001
+    logfile: str | None = None
+    logfile_maxbytes: int = 50 * 1024 * 1024
+    logfile_backups: int = 10
 
 
 def _split_command(command: str) -> list[str]:
@@ -102,6 +121,19 @@ def load_config(path: str | Path, environ: dict[str, str] | None = None) -> Supe
     env = dict(environ if environ is not None else os.environ)
     parser = configparser.ConfigParser(interpolation=None)
     parser.read(path)
+
+    logfile: str | None = None
+    logfile_maxbytes = 50 * 1024 * 1024
+    logfile_backups = 10
+    if parser.has_section("supervisord"):
+        if parser.has_option("supervisord", "logfile"):
+            logfile = interpolate(parser.get("supervisord", "logfile"), env)
+        if parser.has_option("supervisord", "logfile_maxbytes"):
+            logfile_maxbytes = parse_byte_size(
+                parser.get("supervisord", "logfile_maxbytes")
+            )
+        if parser.has_option("supervisord", "logfile_backups"):
+            logfile_backups = int(parser.get("supervisord", "logfile_backups"))
 
     rpc_host = "0.0.0.0"
     rpc_port = 9001
@@ -160,4 +192,11 @@ def load_config(path: str | Path, environ: dict[str, str] | None = None) -> Supe
             directory=directory,
         )
 
-    return SupervisorConfig(programs=programs, rpc_host=rpc_host, rpc_port=rpc_port)
+    return SupervisorConfig(
+        programs=programs,
+        rpc_host=rpc_host,
+        rpc_port=rpc_port,
+        logfile=logfile,
+        logfile_maxbytes=logfile_maxbytes,
+        logfile_backups=logfile_backups,
+    )
