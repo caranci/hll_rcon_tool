@@ -20,6 +20,9 @@ def reset_inherited_resources() -> None:
 
     rcon.cache_utils._REDIS_POOL = None
     rcon.cache_utils._GLOBAL_REDIS_POOL = None
+    # Fresh interpreters create this pool via ttl_cache(decode_responses=False)
+    # before get_redis_client() (default True). Recreate that order after fork.
+    rcon.cache_utils.get_redis_pool(decode_responses=False)
 
 
 def _redirect_stdio(log_path: str) -> None:

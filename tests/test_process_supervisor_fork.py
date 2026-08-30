@@ -233,6 +233,8 @@ def test_reset_inherited_resources_disposes_engine(monkeypatch):
     monkeypatch.setattr("rcon.models._ENGINE", engine)
     monkeypatch.setattr("rcon.cache_utils._REDIS_POOL", object())
     monkeypatch.setattr("rcon.cache_utils._GLOBAL_REDIS_POOL", object())
+    get_pool = mock.Mock()
+    monkeypatch.setattr("rcon.cache_utils.get_redis_pool", get_pool)
 
     reset_inherited_resources()
 
@@ -243,12 +245,14 @@ def test_reset_inherited_resources_disposes_engine(monkeypatch):
     assert rcon.models._ENGINE is None
     assert rcon.cache_utils._REDIS_POOL is None
     assert rcon.cache_utils._GLOBAL_REDIS_POOL is None
+    get_pool.assert_called_once_with(decode_responses=False)
 
 
 def test_reset_inherited_resources_skips_missing_engine(monkeypatch):
     from rcon.process_supervisor.worker.fork_child import reset_inherited_resources
 
     monkeypatch.setattr("rcon.models._ENGINE", None)
+    monkeypatch.setattr("rcon.cache_utils.get_redis_pool", mock.Mock())
     reset_inherited_resources()
 
 
