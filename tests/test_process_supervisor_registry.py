@@ -240,20 +240,16 @@ def test_run_program_scoreboard_failure_reraises(monkeypatch):
         run_program("scoreboard", [])
 
 
-def test_run_program_server_status_automod_blacklists(monkeypatch):
-    serverstatus_run = mock.Mock()
+def test_run_program_automod_blacklists(monkeypatch):
     automod_run = mock.Mock()
     handler = mock.Mock()
     handler_class = mock.Mock(return_value=handler)
-    monkeypatch.setattr("rcon.server_status.serverstatus.run", serverstatus_run)
     monkeypatch.setattr("rcon.automods.automod.run", automod_run)
     monkeypatch.setattr("rcon.blacklist.BlacklistCommandHandler", handler_class)
 
-    run_program("server_status", [])
     run_program("automod", [])
     run_program("blacklists", [])
 
-    serverstatus_run.assert_called_once_with()
     automod_run.assert_called_once_with()
     handler.run.assert_called_once_with()
 
@@ -285,7 +281,6 @@ def test_all_registered_programs_have_dispatch_tests():
         "routines",
         "live_stats_refresh",
         "scoreboard",
-        "server_status",
         "automod",
         "blacklists",
         "watch_killrate",

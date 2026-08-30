@@ -94,7 +94,6 @@ def test_load_repo_supervisord_conf():
         "workers",
         "live_stats_refresh",
         "scoreboard",
-        "server_status",
         "automod",
         "blacklists",
         "watch_killrate",

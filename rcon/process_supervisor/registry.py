@@ -22,7 +22,6 @@ REGISTERED_PROGRAMS: frozenset[str] = frozenset(
         "routines",
         "live_stats_refresh",
         "scoreboard",
-        "server_status",
         "automod",
         "blacklists",
         "watch_killrate",
@@ -214,12 +213,6 @@ def run_program(name: str, extra: list[str]) -> None:
         except Exception:
             logger.exception("scoreboard failed unexpectedly")
             raise
-        return
-
-    if name == "server_status":
-        from rcon.server_status import serverstatus
-
-        serverstatus.run()
         return
 
     if name == "automod":
