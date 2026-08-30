@@ -504,9 +504,11 @@ def test_load_config_skips_program_without_command(tmp_path):
     assert config.programs == {}
 
 
-def test_registered_program_spawns_worker_argv(tmp_path):
+def test_registered_program_spawns_worker_argv(tmp_path, monkeypatch):
     from rcon.process_supervisor.process import ManagedProcess
     from rcon.process_supervisor.registry import worker_argv
+
+    monkeypatch.setenv("CRCON_SUPERVISOR_FORK", "0")
 
     config = ProgramConfig(
         name="broadcasts",

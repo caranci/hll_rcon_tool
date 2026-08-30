@@ -9,10 +9,13 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Protocol
 
 from rcon.process_supervisor.config import ProgramConfig
-from rcon.process_supervisor.registry import worker_argv
+from rcon.process_supervisor.preload import ensure_forkserver, fork_enabled
+from rcon.process_supervisor.registry import command_extra, worker_argv
 from rcon.process_supervisor.states import ProcessState, STATENAME
+from rcon.process_supervisor.worker.fork_child import fork_main
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,40 @@ _SIGNALS = {
     "INT": signal.SIGINT,
     "QUIT": signal.SIGQUIT,
 }
+
+
+class ChildProcess(Protocol):
+    pid: int
+    returncode: int | None
+
+    def poll(self) -> int | None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+
+class ForkedChild:
+    """Popen-compatible wrapper for a multiprocessing forkserver child."""
+
+    def __init__(self, process: Any) -> None:
+        self._process = process
+
+    @property
+    def pid(self) -> int:
+        return self._process.pid or 0
+
+    @property
+    def returncode(self) -> int | None:
+        return self._process.exitcode
+
+    def poll(self) -> int | None:
+        self._process.join(timeout=0)
+        return self._process.exitcode
+
+    def wait(self, timeout: float | None = None) -> int:
+        self._process.join(timeout=timeout)
+        if self._process.is_alive():
+            raise subprocess.TimeoutExpired(str(self.pid), timeout)
+        return self._process.exitcode or 0
 
 
 def _format_uptime(seconds: float) -> str:
@@ -39,7 +76,7 @@ class ManagedProcess:
 
     state: ProcessState = ProcessState.STOPPED
     pid: int = 0
-    popen: subprocess.Popen[bytes] | None = None
+    popen: ChildProcess | None = None
     log_file: Path | None = None
     spawnerr: str = ""
     exitstatus: int = 0
@@ -100,15 +137,32 @@ class ManagedProcess:
         self.spawnerr = ""
 
         try:
-            self._log_handle = open(self.log_file, "ab", buffering=0)
-            self.popen = subprocess.Popen(
-                worker_argv(self.config),
-                cwd=self.config.directory,
-                env=child_env,
-                stdout=self._log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
+            extra = command_extra(self.config)
+            if extra is None or not fork_enabled():
+                self._log_handle = open(self.log_file, "ab", buffering=0)
+                self.popen = subprocess.Popen(
+                    worker_argv(self.config),
+                    cwd=self.config.directory,
+                    env=child_env,
+                    stdout=self._log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            else:
+                ctx = ensure_forkserver()
+                proc = ctx.Process(
+                    target=fork_main,
+                    args=(
+                        self.config.name,
+                        extra,
+                        child_env,
+                        str(self.log_file),
+                        self.config.directory,
+                    ),
+                    daemon=False,
+                )
+                proc.start()
+                self.popen = ForkedChild(proc)
         except OSError as exc:
             self.spawnerr = str(exc)
             logger.error("Failed to spawn '%s': %s", self.config.name, exc)
