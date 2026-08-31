@@ -55,9 +55,9 @@ class ProcessSupervisor:
                     FAULT_ALREADY_STARTED,
                     f"ALREADY_STARTED: {name}",
                 )
-            proc.start(wait=True)
-            logger.info("Started process '%s' via RPC", name)
-            return True
+            proc.start(wait=False)
+        logger.info("Started process '%s' via RPC", name)
+        return True
 
     def stop_process(self, name: str) -> bool:
         with self._lock:
@@ -67,10 +67,13 @@ class ProcessSupervisor:
                     FAULT_NOT_RUNNING,
                     f"NOT_RUNNING: {name}",
                 )
-            proc.stop(wait=True)
-            proc.state = ProcessState.STOPPED
-            logger.info("Stopped process '%s' via RPC", name)
-            return True
+            proc.stop(wait=False)
+        proc.stop(wait=True)
+        with self._lock:
+            if proc.state != ProcessState.STOPPED:
+                proc.state = ProcessState.STOPPED
+        logger.info("Stopped process '%s' via RPC", name)
+        return True
 
     def autostart(self) -> None:
         with self._lock:

@@ -183,7 +183,11 @@ class ManagedProcess:
             logger.info("Process '%s' entered RUNNING state", self.config.name)
 
     def stop(self, wait: bool = True) -> None:
-        if not self.is_running() or self.popen is None:
+        if self.popen is None:
+            if self.state == ProcessState.STOPPING:
+                self.state = ProcessState.STOPPED
+            return
+        if not self.is_running():
             return
 
         self.manual_stop = True

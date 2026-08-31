@@ -1,0 +1,143 @@
+# Process supervisor
+
+A small Python arbiter that replaces Supervisord in the CRCON supervisor container. It reads the existing `supervisord.conf` INI, speaks the XML-RPC subset the Services UI needs, and starts known Python loops **without** `manage.py` / `rcon.cli`. Registered loops can fork from a preloaded helper so extra services mostly add unique heap instead of another copy of the catalog.
+
+Backend / gunicorn is out of scope. `workers` (rq), `cron`, and `scheduler` still exec their INI commands.
+
+## Why
+
+Each Supervisord child was a new interpreter that imported `rcon.cli`. That paid the ~100+ MB import graph once per loop with no shared pages. This arbiter:
+
+1. Lazy-imports only that service’s `run()` (broadcasts does not load automod, Discord, etc. at import time).
+2. Forks registered loops from a **forkserver** that has already mapped `hllrcon` and `rcon.maps`, so children share those pages via copy-on-write.
+
+INI `command=` lines stay as documentation / extra argv. Spawn is chosen by **program name**, not by executing the INI command for registered loops.
+
+Idle RAM notes and before/after snapshots: [`supervisor-memory.md`](../../supervisor-memory.md) at the repo root.
+
+## Runtime
+
+```
+Container start (entrypoint.sh)
+        |
+        v
+python -m rcon.process_supervisor -c /config/supervisord.conf
+        |
+        +-- parse INI (config.py)
+        +-- arbiter log (logging_setup.py)
+        +-- XML-RPC thread :9001/RPC2 (rpc.py)
+        +-- ProcessSupervisor.run()  100ms tick
+                |
+                v
+        ManagedProcess.spawn
+                |
+    +-----------+-----------+
+    |                       |
+ registered + fork on    registered + fork off    name not in registry
+ forkserver -> fork_main    Popen worker -m          Popen INI argv
+                |                       |                       |
+                +-----------+-----------+                       |
+                            v                                   v
+                   registry.run_program()              rq / cron / rqscheduler
+```
+
+Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_supervisor` instead of `supervisord`. Config path is `/config/supervisord_$SERVER_NUMBER.conf` if it exists, else `/config/supervisord.conf`.
+
+## Spawn policy
+
+| Program set | Condition | Child | INI `command=` |
+| --- | --- | --- | --- |
+| `REGISTERED_PROGRAMS`, fork on | name in registry, `CRCON_SUPERVISOR_FORK` not disabled | `multiprocessing` forkserver → `fork_main` | Ignored except extra argv (`log_recorder -i 10`) |
+| `REGISTERED_PROGRAMS`, fork off | `CRCON_SUPERVISOR_FORK=0` (or `false` / `no` / `off`) | `Popen python -m rcon.process_supervisor.worker` | Same rewrite; new interpreter, no CoW |
+| `workers`, `cron`, `scheduler` | name not in registry | `Popen` of INI argv | Honored as-is |
+
+Fork is disabled on Windows. Do not fork from the RPC-threaded arbiter; the forkserver is a separate helper process.
+
+### After fork (`worker/fork_child.py`)
+
+1. Replace `os.environ` with the program’s child env.
+2. `os.setsid()` (new process group for `killpg` on stop).
+3. Redirect stdout/stderr to the program log file.
+4. Import `rcon.settings` (logging from child env).
+5. `install_unaccent()`, then drop inherited SQLAlchemy engine and Redis pools; recreate the Redis pool in **bytes** mode (same order as a fresh interpreter). That does not flush Redis keys.
+6. `registry.run_program(name, extra)`.
+
+Discord still loads **after** fork in services that use it (`seed_vip`, `scoreboard`, …), so those stay heavier than a tiny poller.
+
+## Control plane and locking
+
+XML-RPC (`SimpleXMLRPCServer`) is **one request at a time**. The arbiter loop and RPC share `ProcessSupervisor._lock`.
+
+- **startProcess:** spawn under the lock (`start(wait=False)`), return immediately. `tick()` promotes STARTING → RUNNING after `startsecs`. The RPC thread must not sleep `startsecs` (10s on automod / blacklists / scoreboard / server_status) or it would stall `getAllProcessInfo` and every other program’s reap/backoff.
+- **stopProcess:** signal under the lock (`stop(wait=False)`), wait **outside** the lock until the child exits (or SIGKILL after `stopwaitsecs`), then set STOPPED. Wait is required so the next start is not `ALREADY_STARTED`. Concurrent `tick()` / `getAllProcessInfo` must still run during that wait.
+- **tick:** left as-is; STOPPING children are reaped here if the child dies before the RPC wait finishes. `ManagedProcess.stop` is idempotent if `popen` is already `None`.
+
+Fault codes match Supervisord for the UI: `BAD_NAME` 10, `ALREADY_STARTED` 60, `NOT_RUNNING` 70.
+
+Methods exposed:
+
+- `supervisor.getAllProcessInfo`
+- `supervisor.getProcessInfo`
+- `supervisor.startProcess`
+- `supervisor.stopProcess`
+
+States: STOPPED, STARTING, RUNNING, BACKOFF, STOPPING, EXITED, FATAL (same integer codes as Supervisord). Autorestart: `true` / `false` / `unexpected`. Backoff before retry is a flat 1s (not Supervisord’s exponential curve).
+
+Client: [`rconweb/api/services.py`](../../rconweb/api/services.py) via `SUPERVISOR_RPC_URL` (typically `http://supervisor:9001/RPC2`).
+
+## Supervisord subset (not a clone)
+
+Implemented: `[program:*]` + `%(ENV_VAR)s`, `[inet_http_server] port`, `[supervisord] logfile` rotation, process info fields the UI reads, start/stop/faults, `stopsignal` / `stopwaitsecs` / `startretries` / `startsecs` / `autostart` / `autorestart`.
+
+Not implemented:
+
+- Unix socket / `supervisorctl` (`[unix_http_server]` in the INI is ignored)
+- Per-program log rotation (children append to `LOGGING_PATH` / `LOGGING_FILENAME`)
+- HTTP auth on XML-RPC
+- `startProcess` wait-until-RUNNING (returns after spawn)
+
+## Adding a Python loop
+
+Spawn is rewritten by **name**. A new loop needs all of:
+
+1. `[program:your_name]` in [`config/supervisord.conf`](../../config/supervisord.conf)
+2. `your_name` in `REGISTERED_PROGRAMS` in [`registry.py`](registry.py)
+3. A `run_program` branch that lazy-imports and calls the service (keep the same exception wrapping as `rcon.cli` if that command had it)
+
+Custom `command=` flags on a registered name are dropped except the hand-rolled `log_recorder` argv parser. Unregistered names still exec the INI command (use that for non-Python helpers).
+
+## Environment
+
+| Variable | Role |
+| --- | --- |
+| `SERVER_NUMBER` | Numbered INI path `/config/supervisord_$SERVER_NUMBER.conf` |
+| `CRCON_SUPERVISOR_FORK` | Default on. Set `0` / `false` / `no` / `off` to exec workers instead of fork |
+| `SUPERVISOR_RPC_URL` | Django → this arbiter |
+| `LOGGING_PATH` / `LOGGING_FILENAME` | Per-program child logs (from INI `environment=`) |
+
+## Module map
+
+| File | Role |
+| --- | --- |
+| [`__main__.py`](__main__.py) | Load INI, logging, RPC thread, `run()` |
+| [`config.py`](config.py) | INI → `ProgramConfig` / `SupervisorConfig` |
+| [`logging_setup.py`](logging_setup.py) | Arbiter stderr + rotating `supervisord.log` |
+| [`manager.py`](manager.py) | Lock, autostart, tick, start/stop RPC, signals |
+| [`process.py`](process.py) | State machine, Popen vs fork spawn, `killpg` |
+| [`preload.py`](preload.py) | Forkserver context; preload `hllrcon`, `rcon.maps` only |
+| [`registry.py`](registry.py) | Name set, argv rewrite, `run_program` |
+| [`rpc.py`](rpc.py) | XML-RPC subset |
+| [`states.py`](states.py) | Supervisord state ints and fault codes |
+| [`worker/__main__.py`](worker/__main__.py) | Exec path: settings, unaccent, `run_program` |
+| [`worker/fork_child.py`](worker/fork_child.py) | Post-fork env, stdio, resource reset |
+
+Preload must stay tiny. Do not add `rcon.cli`, `rcon.settings`, `rcon.rcon`, or `discord` to `PRELOAD_MODULES` (tests assert this).
+
+## Tests
+
+```bash
+uv run pytest tests/test_process_supervisor.py \
+  tests/test_process_supervisor_fork.py \
+  tests/test_process_supervisor_registry.py \
+  tests/test_process_supervisor_worker_main.py -q
+```

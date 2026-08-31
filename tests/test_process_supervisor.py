@@ -291,6 +291,97 @@ def test_rpc_start_stop_and_faults(tmp_path):
     server.shutdown()
 
 
+def test_rpc_start_does_not_wait_startsecs(tmp_path):
+    supervisor = _make_supervisor(
+        tmp_path, ["/bin/sleep", "30"], startsecs=2, autostart=False
+    )
+    server = start_rpc_server(supervisor, "127.0.0.1", 0)
+    host, port = server.server_address
+    client = ServerProxy(f"http://{host}:{port}/RPC2", allow_none=True)
+
+    started = time.monotonic()
+    assert client.supervisor.startProcess("demo") is True
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.5
+
+    info = client.supervisor.getProcessInfo("demo")
+    assert info["state"] in {ProcessState.STARTING, ProcessState.RUNNING}
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        supervisor.tick()
+        if supervisor.get_process_info("demo")["state"] == ProcessState.RUNNING:
+            break
+        time.sleep(0.05)
+    assert supervisor.get_process_info("demo")["state"] == ProcessState.RUNNING
+
+    supervisor.stop_process("demo")
+    server.shutdown()
+
+
+def _make_dual_supervisor(tmp_path: Path) -> ProcessSupervisor:
+    def _prog(name: str, **overrides) -> ProgramConfig:
+        defaults = {
+            "name": name,
+            "command": ["/bin/sleep", "30"],
+            "environment": {"LOGGING_FILENAME": f"{name}.log"},
+            "autostart": False,
+            "autorestart": "unexpected",
+            "startretries": 2,
+            "startsecs": 0,
+            "stopsignal": "TERM",
+            "stopwaitsecs": 2,
+            "directory": None,
+        }
+        defaults.update(overrides)
+        return ProgramConfig(**defaults)
+
+    config = SupervisorConfig(
+        programs={
+            "slow": _prog("slow", stopwaitsecs=5),
+            "quick": _prog("quick"),
+        }
+    )
+    return ProcessSupervisor(config, base_environ={"LOGGING_PATH": str(tmp_path)})
+
+
+def test_stop_does_not_hold_lock_during_wait(tmp_path):
+    import threading
+
+    supervisor = _make_dual_supervisor(tmp_path)
+    supervisor.start_process("slow")
+    supervisor.start_process("quick")
+    assert supervisor.get_process_info("slow")["state"] == ProcessState.RUNNING
+    assert supervisor.get_process_info("quick")["state"] == ProcessState.RUNNING
+
+    stop_error: list[BaseException] = []
+
+    def stop_slow() -> None:
+        try:
+            supervisor.stop_process("slow")
+        except BaseException as exc:
+            stop_error.append(exc)
+
+    stop_thread = threading.Thread(target=stop_slow, daemon=True)
+    stop_thread.start()
+
+    while stop_thread.is_alive():
+        for call in (supervisor.get_all_process_info, supervisor.tick):
+            started = time.monotonic()
+            call()
+            assert time.monotonic() - started < 0.5
+        time.sleep(0.05)
+
+    stop_thread.join(timeout=6)
+    assert not stop_thread.is_alive()
+    assert not stop_error
+
+    assert supervisor.get_process_info("slow")["state"] == ProcessState.STOPPED
+    assert supervisor.get_process_info("quick")["state"] == ProcessState.RUNNING
+
+    supervisor.stop_process("quick")
+
+
 def test_autostart_on_run(tmp_path):
     supervisor = _make_supervisor(
         tmp_path,
