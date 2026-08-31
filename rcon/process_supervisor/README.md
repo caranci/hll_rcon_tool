@@ -8,12 +8,10 @@ Backend / gunicorn is out of scope. `workers` (rq), `cron`, and `scheduler` stil
 
 Each Supervisord child was a new interpreter that imported `rcon.cli`. That paid the ~100+ MB import graph once per loop with no shared pages. This arbiter:
 
-1. Lazy-imports only that service’s `run()` (broadcasts does not load automod, Discord, etc. at import time).
+1. Dispatches by program name to a **supervisor-only adapter** (`programs.run_<name>`), which lazy-imports that service (broadcasts does not load automod, Discord, etc. at import time). Adapters may wrap `run()` with try/except, hook imports, or scoreboard sqlite bootstrap; they are not wired into `rcon.cli` until the arbiter is proven in production.
 2. Forks registered loops from a **forkserver** that has already mapped `hllrcon` and `rcon.maps`, so children share those pages via copy-on-write.
 
 INI `command=` lines stay as documentation / extra argv. Spawn is chosen by **program name**, not by executing the INI command for registered loops.
-
-Idle RAM notes and before/after snapshots: [`supervisor-memory.md`](../../supervisor-memory.md) at the repo root.
 
 ## Runtime
 
@@ -39,6 +37,8 @@ python -m rcon.process_supervisor -c /config/supervisord.conf
                 +-----------+-----------+                       |
                             v                                   v
                    registry.run_program()              rq / cron / rqscheduler
+                            |
+                   programs.run_<name>()
 ```
 
 Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_supervisor` instead of `supervisord`. Config path is `/config/supervisord_$SERVER_NUMBER.conf` if it exists, else `/config/supervisord.conf`.
@@ -60,7 +60,7 @@ Fork is disabled on Windows. Do not fork from the RPC-threaded arbiter; the fork
 3. Redirect stdout/stderr to the program log file.
 4. Import `rcon.settings` (logging from child env).
 5. `install_unaccent()`, then drop inherited SQLAlchemy engine and Redis pools; recreate the Redis pool in **bytes** mode (same order as a fresh interpreter). That does not flush Redis keys.
-6. `registry.run_program(name, extra)`.
+6. `registry.run_program(name, extra)` → `programs.run_<name>()` (or `run_log_recorder(extra)`).
 
 Discord still loads **after** fork in services that use it (`seed_vip`, `scoreboard`, …), so those stay heavier than a tiny poller.
 
@@ -101,10 +101,12 @@ Not implemented:
 Spawn is rewritten by **name**. A new loop needs all of:
 
 1. `[program:your_name]` in [`config/supervisord.conf`](../../config/supervisord.conf)
-2. `your_name` in `REGISTERED_PROGRAMS` in [`registry.py`](registry.py)
-3. A `run_program` branch that lazy-imports and calls the service (keep the same exception wrapping as `rcon.cli` if that command had it)
+2. A `run_<name>` entry in `_PROGRAM_RUNNERS` in [`registry.py`](registry.py) pointing at a function in [`programs.py`](programs.py)
+3. Implement `run_<name>` in [`programs.py`](programs.py) with lazy imports and the same exception wrapping as `manage.py` / [`rcon/cli.py`](../../rcon/cli.py) today
 
-Custom `command=` flags on a registered name are dropped except the hand-rolled `log_recorder` argv parser. Unregistered names still exec the INI command (use that for non-Python helpers).
+CLI is **not** wired to these adapters until the arbiter is proven in production; duplication with CLI wrappers is intentional for now.
+
+Custom `command=` flags on a registered name are dropped except the hand-rolled `log_recorder` argv parser in `programs.py`. Unregistered names still exec the INI command (use that for non-Python helpers).
 
 ## Environment
 
@@ -125,7 +127,8 @@ Custom `command=` flags on a registered name are dropped except the hand-rolled 
 | [`manager.py`](manager.py) | Lock, autostart, tick, start/stop RPC, signals |
 | [`process.py`](process.py) | State machine, Popen vs fork spawn, `killpg` |
 | [`preload.py`](preload.py) | Forkserver context; preload `hllrcon`, `rcon.maps` only |
-| [`registry.py`](registry.py) | Name set, argv rewrite, `run_program` |
+| [`programs.py`](programs.py) | Supervisor-only `run_<name>` adapters and hook/argv helpers |
+| [`registry.py`](registry.py) | Name set, argv rewrite, `_PROGRAM_RUNNERS` dispatch |
 | [`rpc.py`](rpc.py) | XML-RPC subset |
 | [`states.py`](states.py) | Supervisord state ints and fault codes |
 | [`worker/__main__.py`](worker/__main__.py) | Exec path: settings, unaccent, `run_program` |
