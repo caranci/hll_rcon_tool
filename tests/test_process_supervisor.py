@@ -527,12 +527,36 @@ def _repo_supervisord_config() -> SupervisorConfig:
 
 
 def test_adapters_match_supervisord_conf():
-    from rcon.process_supervisor.registry import adapter_names, has_adapter
+    from rcon.process_supervisor.registry import (
+        adapter_names,
+        has_adapter,
+        ini_command_looks_like_python,
+    )
 
     config = _repo_supervisord_config()
     assert adapter_names() <= set(config.programs)
     for name in ("workers", "cron", "scheduler"):
         assert not has_adapter(name)
+    for name, program in config.programs.items():
+        if ini_command_looks_like_python(program.command):
+            assert has_adapter(name), f"{name} has Python INI command but no adapter"
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ([], False),
+        (["/code/manage.py", "broadcast_loop"], True),
+        (["python", "-m", "rcon.scoreboard"], True),
+        (["rq", "worker", "--with-scheduler"], False),
+        (["/bin/bash", "-c", "cron -f"], False),
+        (["rqscheduler", "--interval", "10"], False),
+    ],
+)
+def test_ini_command_looks_like_python(command, expected):
+    from rcon.process_supervisor.registry import ini_command_looks_like_python
+
+    assert ini_command_looks_like_python(command) is expected
 
 
 def test_command_extra_log_recorder_scoreboard_cron():

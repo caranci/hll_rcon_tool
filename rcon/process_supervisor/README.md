@@ -49,7 +49,7 @@ Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_super
 | --- | --- | --- | --- |
 | Has `run_<name>` adapter, fork on | `has_adapter(name)` and `CRCON_SUPERVISOR_FORK` not disabled | `multiprocessing` forkserver → `fork_main` | Ignored except extra argv (`log_recorder -i 10`) |
 | Has `run_<name>` adapter, fork off | `CRCON_SUPERVISOR_FORK=0` (or `false` / `no` / `off`) | `Popen python -m rcon.process_supervisor.worker` | Same rewrite; new interpreter, no CoW |
-| No adapter | no `programs.run_<name>` | `Popen` of INI argv | Honored as-is |
+| No adapter | no `programs.run_<name>` | `Popen` of INI argv (Python-shaped commands log a warning) | Honored as-is; rq/cron/scheduler exec silently |
 
 Fork is disabled on Windows. Do not fork from the RPC-threaded arbiter; the forkserver is a separate helper process.
 
@@ -105,7 +105,7 @@ Opt-in is by code: add `run_<name>()` in [`programs.py`](programs.py). Long-term
 
 CLI is **not** wired to these adapters until the arbiter is proven in production; duplication with CLI wrappers is intentional for now.
 
-Custom `command=` flags on an adapted name are dropped except the hand-rolled `log_recorder` argv parser in `programs.py`. Names without a `run_<name>()` still exec the INI command (use that for non-Python helpers or until you add an adapter).
+Custom `command=` flags on an adapted name are dropped except the hand-rolled `log_recorder` argv parser in `programs.py`. Names without a `run_<name>()` still exec the INI command (use that for non-Python helpers or until you add an adapter). A `manage.py` / `python -m` program without `run_<name>()` still starts, but the arbiter logs a warning; add the adapter to get worker/fork spawn.
 
 ## Environment
 

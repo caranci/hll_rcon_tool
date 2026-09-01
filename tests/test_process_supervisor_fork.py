@@ -74,11 +74,36 @@ def test_cron_still_uses_popen_with_ini_command(tmp_path, monkeypatch):
     process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
     popen_mock = mock.Mock(pid=456)
     ctor = mock.Mock(return_value=popen_mock)
+    warning = mock.Mock()
     monkeypatch.setattr("rcon.process_supervisor.process.subprocess.Popen", ctor)
+    monkeypatch.setattr("rcon.process_supervisor.process.logger.warning", warning)
     process.spawn()
     assert command_extra(config) is None
     ctor.assert_called_once()
     assert ctor.call_args.args[0] == config.command
+    warning.assert_not_called()
+
+
+def test_python_ini_without_adapter_warns_and_execs_ini(tmp_path, monkeypatch):
+    config = ProgramConfig(
+        name="custom_loop",
+        command=["/code/manage.py", "custom_loop"],
+        environment={"LOGGING_FILENAME": "custom_loop.log"},
+        startsecs=0,
+    )
+    process = ManagedProcess(config=config, base_environ={"LOGGING_PATH": str(tmp_path)})
+    popen_mock = mock.Mock(pid=789)
+    ctor = mock.Mock(return_value=popen_mock)
+    warning = mock.Mock()
+    monkeypatch.setattr("rcon.process_supervisor.process.subprocess.Popen", ctor)
+    monkeypatch.setattr("rcon.process_supervisor.process.logger.warning", warning)
+    process.spawn()
+    assert command_extra(config) is None
+    ctor.assert_called_once()
+    assert ctor.call_args.args[0] == config.command
+    warning.assert_called_once()
+    assert warning.call_args.args[1] == "custom_loop"
+    assert warning.call_args.args[3] == config.command
 
 
 def test_registered_spawn_uses_fork_when_enabled(tmp_path, monkeypatch):

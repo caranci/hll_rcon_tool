@@ -28,6 +28,14 @@ def adapter_names() -> frozenset[str]:
     )
 
 
+def ini_command_looks_like_python(command: list[str]) -> bool:
+    if not command:
+        return False
+    if command[0].endswith("manage.py"):
+        return True
+    return len(command) >= 3 and command[1] == "-m"
+
+
 def command_extra(program: ProgramConfig) -> list[str] | None:
     """Return extra argv for the worker, or None to spawn the INI command as-is."""
 

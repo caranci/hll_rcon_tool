@@ -13,7 +13,11 @@ from typing import Any, Protocol
 
 from rcon.process_supervisor.config import ProgramConfig
 from rcon.process_supervisor.preload import ensure_forkserver, fork_enabled
-from rcon.process_supervisor.registry import command_extra, worker_argv
+from rcon.process_supervisor.registry import (
+    command_extra,
+    ini_command_looks_like_python,
+    worker_argv,
+)
 from rcon.process_supervisor.states import ProcessState, STATENAME
 from rcon.process_supervisor.worker.fork_child import fork_main
 
@@ -138,6 +142,13 @@ class ManagedProcess:
 
         try:
             extra = command_extra(self.config)
+            if extra is None and ini_command_looks_like_python(self.config.command):
+                logger.warning(
+                    "Program %r has no programs.run_%s adapter; exec INI command as-is: %s",
+                    self.config.name,
+                    self.config.name,
+                    self.config.command,
+                )
             if extra is None or not fork_enabled():
                 self._log_handle = open(self.log_file, "ab", buffering=0)
                 self.popen = subprocess.Popen(
