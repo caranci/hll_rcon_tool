@@ -68,7 +68,7 @@ Discord still loads **after** fork in services that use it (`seed_vip`, `scorebo
 
 XML-RPC (`SimpleXMLRPCServer`) is **one request at a time**. The arbiter loop and RPC share `ProcessSupervisor._lock`.
 
-- **startProcess:** spawn under the lock (`start(wait=False)`), return immediately. `tick()` promotes STARTING → RUNNING after `startsecs`. The RPC thread must not sleep `startsecs` (10s on automod / blacklists / scoreboard / server_status) or it would stall `getAllProcessInfo` and every other program’s reap/backoff.
+- **startProcess:** spawn under the lock (`start(wait=False)`), return immediately. `tick()` promotes STARTING → RUNNING after `startsecs`. The RPC thread must not sleep `startsecs` (10s on automod / blacklists / scoreboard) or it would stall `getAllProcessInfo` and every other program’s reap/backoff.
 - **stopProcess:** signal under the lock (`stop(wait=False)`), wait **outside** the lock until the child exits (or SIGKILL after `stopwaitsecs`), then set STOPPED. Wait is required so the next start is not `ALREADY_STARTED`. Concurrent `tick()` / `getAllProcessInfo` must still run during that wait.
 - **tick:** left as-is; STOPPING children are reaped here if the child dies before the RPC wait finishes. `ManagedProcess.stop` is idempotent if `popen` is already `None`.
 

@@ -418,6 +418,83 @@ def test_stop_wait_true_after_tick_reap(tmp_path):
     assert info["pid"] == 0
 
 
+def test_stop_none_popen_while_stopping_sets_stopped(tmp_path):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    proc = supervisor.get_process("demo")
+    proc.state = ProcessState.STOPPING
+    proc.popen = None
+    proc.stop(wait=True)
+    assert proc.state == ProcessState.STOPPED
+
+
+def test_stop_when_not_running_is_noop(tmp_path):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    proc = supervisor.get_process("demo")
+    proc.state = ProcessState.STOPPED
+    proc.popen = mock.Mock()
+    proc.stop(wait=True)
+    assert proc.state == ProcessState.STOPPED
+    proc.popen.poll.assert_not_called()
+
+
+def test_stop_process_lookup_error_sets_stopped(tmp_path, monkeypatch):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    supervisor.start_process("demo")
+    monkeypatch.setattr(
+        "rcon.process_supervisor.process.os.killpg",
+        mock.Mock(side_effect=ProcessLookupError),
+    )
+    proc = supervisor.get_process("demo")
+    proc.stop(wait=True)
+    assert proc.state == ProcessState.STOPPED
+    assert proc.popen is None
+
+
+def test_stop_wait_when_popen_cleared_mid_loop(tmp_path):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    supervisor.start_process("demo")
+    proc = supervisor.get_process("demo")
+    inner = proc.popen
+    assert inner is not None
+
+    class ClearingChild:
+        def __init__(self) -> None:
+            self.pid = inner.pid
+            self.polls = 0
+            self.returncode = 0
+
+        def poll(self):
+            self.polls += 1
+            if self.polls >= 2:
+                proc.popen = None
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+    proc.popen = ClearingChild()
+    try:
+        proc.stop(wait=True)
+        assert proc.state == ProcessState.STOPPED
+    finally:
+        if inner.poll() is None:
+            inner.wait(timeout=2)
+
+
+def test_stop_sends_sigkill_after_stopwaitsecs(tmp_path):
+    supervisor = _make_supervisor(
+        tmp_path,
+        ["/bin/sh", "-c", 'trap "" TERM; sleep 30'],
+        startsecs=0,
+        stopwaitsecs=0,
+    )
+    supervisor.start_process("demo")
+    proc = supervisor.get_process("demo")
+    proc.stop(wait=True)
+    assert proc.state == ProcessState.STOPPED
+    assert proc.popen is None
+
+
 def test_autostart_on_run(tmp_path):
     supervisor = _make_supervisor(
         tmp_path,

@@ -46,29 +46,29 @@ def test_parse_log_recorder_args(extra, expected):
 
 def test_run_program_broadcasts(monkeypatch):
     called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_broadcasts", called)
+    monkeypatch.setattr("rcon.broadcast.run", called)
     run_program("broadcasts", [])
     called.assert_called_once_with()
 
 
 def test_run_program_expiring_vips(monkeypatch):
     called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_expiring_vips", called)
+    monkeypatch.setattr("rcon.expiring_vips.service.run", called)
     run_program("expiring_vips", [])
     called.assert_called_once_with()
 
 
 def test_run_program_seed_vip_success(monkeypatch):
     called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_seed_vip", called)
+    monkeypatch.setattr("rcon.seed_vip.service.run", called)
     run_program("seed_vip", [])
     called.assert_called_once_with()
 
 
 def test_run_program_seed_vip_failure_exits(monkeypatch):
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_seed_vip",
-        mock.Mock(side_effect=SystemExit(1)),
+        "rcon.seed_vip.service.run",
+        mock.Mock(side_effect=RuntimeError("seed")),
     )
     with pytest.raises(SystemExit) as exc:
         run_program("seed_vip", [])
@@ -76,33 +76,63 @@ def test_run_program_seed_vip_failure_exits(monkeypatch):
 
 
 def test_run_program_log_event_loop(monkeypatch):
-    called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_log_event_loop", called)
+    loop = mock.Mock()
+    monkeypatch.setattr(
+        "rcon.process_supervisor.programs.ensure_log_loop_hooks", lambda: None
+    )
+    monkeypatch.setattr("rcon.logs.loop.LogLoop", lambda: loop)
+    monkeypatch.setattr(
+        "rcon.cache_utils.invalidates",
+        lambda *_args, **_kwargs: mock.MagicMock(
+            __enter__=mock.Mock(return_value=None),
+            __exit__=mock.Mock(return_value=False),
+        ),
+    )
+    monkeypatch.setattr("rcon.discord_chat.get_handler", mock.Mock())
+    monkeypatch.setattr("rcon.logs.loop.load_generic_hooks", mock.Mock())
     run_program("log_event_loop", [])
-    called.assert_called_once_with()
+    loop.run.assert_called_once_with()
 
 
 def test_run_program_log_event_loop_failure_exits(monkeypatch):
+    loop = mock.Mock()
+    loop.run.side_effect = RuntimeError("chat")
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_log_event_loop",
-        mock.Mock(side_effect=SystemExit(1)),
+        "rcon.process_supervisor.programs.ensure_log_loop_hooks", lambda: None
     )
+    monkeypatch.setattr("rcon.logs.loop.LogLoop", lambda: loop)
+    monkeypatch.setattr(
+        "rcon.cache_utils.invalidates",
+        lambda *_args, **_kwargs: mock.MagicMock(
+            __enter__=mock.Mock(return_value=None),
+            __exit__=mock.Mock(return_value=False),
+        ),
+    )
+    monkeypatch.setattr("rcon.discord_chat.get_handler", mock.Mock())
+    monkeypatch.setattr("rcon.logs.loop.load_generic_hooks", mock.Mock())
     with pytest.raises(SystemExit) as exc:
         run_program("log_event_loop", [])
     assert exc.value.code == 1
 
 
 def test_run_program_log_stream_success(monkeypatch):
-    called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_log_stream", called)
+    stream = mock.Mock()
+    config = mock.Mock()
+    config.enabled = True
+    monkeypatch.setattr(
+        "rcon.user_config.log_stream.LogStreamUserConfig.load_from_db",
+        mock.Mock(return_value=config),
+    )
+    monkeypatch.setattr("rcon.logs.stream.LogStream", lambda: stream)
     run_program("log_stream", [])
-    called.assert_called_once_with()
+    stream.clear.assert_called_once_with()
+    stream.run.assert_called_once_with()
 
 
 def test_run_program_log_stream_failure_exits(monkeypatch):
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_log_stream",
-        mock.Mock(side_effect=SystemExit(1)),
+        "rcon.user_config.log_stream.LogStreamUserConfig.load_from_db",
+        mock.Mock(side_effect=RuntimeError("stream")),
     )
     with pytest.raises(SystemExit) as exc:
         run_program("log_stream", [])
@@ -110,17 +140,17 @@ def test_run_program_log_stream_failure_exits(monkeypatch):
 
 
 def test_run_program_log_recorder(monkeypatch):
-    called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_log_recorder", called)
+    recorder = mock.Mock()
+    monkeypatch.setattr("rcon.logs.recorder.LogRecorder", mock.Mock(return_value=recorder))
     run_program("log_recorder", ["-i", "20", "-n"])
-    called.assert_called_once_with(["-i", "20", "-n"])
+    recorder.run.assert_called_once_with(run_immediately=True)
 
 
 def test_run_program_auto_settings_and_routines(monkeypatch):
     auto_settings = mock.Mock()
     routines = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_auto_settings", auto_settings)
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_routines", routines)
+    monkeypatch.setattr("rcon.auto_settings.run", auto_settings)
+    monkeypatch.setattr("rcon.routines.run", routines)
     run_program("auto_settings", [])
     run_program("routines", [])
     auto_settings.assert_called_once_with()
@@ -129,15 +159,15 @@ def test_run_program_auto_settings_and_routines(monkeypatch):
 
 def test_run_program_live_stats_refresh(monkeypatch):
     called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_live_stats_refresh", called)
+    monkeypatch.setattr("rcon.player_stats.live_stats_loop", called)
     run_program("live_stats_refresh", [])
     called.assert_called_once_with()
 
 
 def test_run_program_live_stats_keyboard_interrupt(monkeypatch):
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_live_stats_refresh",
-        mock.Mock(side_effect=SystemExit(0)),
+        "rcon.player_stats.live_stats_loop",
+        mock.Mock(side_effect=KeyboardInterrupt),
     )
     with pytest.raises(SystemExit) as exc:
         run_program("live_stats_refresh", [])
@@ -146,8 +176,8 @@ def test_run_program_live_stats_keyboard_interrupt(monkeypatch):
 
 def test_run_program_live_stats_failure_exits(monkeypatch):
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_live_stats_refresh",
-        mock.Mock(side_effect=SystemExit(1)),
+        "rcon.player_stats.live_stats_loop",
+        mock.Mock(side_effect=RuntimeError("stats")),
     )
     with pytest.raises(SystemExit) as exc:
         run_program("live_stats_refresh", [])
@@ -156,24 +186,29 @@ def test_run_program_live_stats_failure_exits(monkeypatch):
 
 def test_run_program_scoreboard_success(monkeypatch):
     scoreboard_run = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_scoreboard", scoreboard_run)
+    monkeypatch.setattr("pathlib.Path.exists", lambda self: True)
+    monkeypatch.setattr("sqlalchemy.create_engine", mock.Mock())
+    metadata = mock.Mock()
+    monkeypatch.setattr("rcon.scoreboard.Base", mock.Mock(metadata=metadata))
+    monkeypatch.setattr("rcon.scoreboard.run", scoreboard_run)
     run_program("scoreboard", [])
+    metadata.create_all.assert_called_once()
     scoreboard_run.assert_called_once_with()
 
 
 def test_run_program_scoreboard_missing_volume_exits(monkeypatch):
-    monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_scoreboard",
-        mock.Mock(side_effect=SystemExit(-1)),
-    )
+    monkeypatch.setattr("pathlib.Path.exists", lambda self: False)
     with pytest.raises(SystemExit) as exc:
         run_program("scoreboard", [])
     assert exc.value.code == -1
 
 
 def test_run_program_scoreboard_failure_reraises(monkeypatch):
+    monkeypatch.setattr("pathlib.Path.exists", lambda self: True)
+    monkeypatch.setattr("sqlalchemy.create_engine", mock.Mock())
+    monkeypatch.setattr("rcon.scoreboard.Base", mock.Mock(metadata=mock.Mock()))
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_scoreboard",
+        "rcon.scoreboard.run",
         mock.Mock(side_effect=RuntimeError("scoreboard")),
     )
     with pytest.raises(RuntimeError, match="scoreboard"):
@@ -182,26 +217,29 @@ def test_run_program_scoreboard_failure_reraises(monkeypatch):
 
 def test_run_program_automod_blacklists(monkeypatch):
     automod_run = mock.Mock()
-    blacklists_run = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_automod", automod_run)
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_blacklists", blacklists_run)
+    handler = mock.Mock()
+    monkeypatch.setattr("rcon.automods.automod.run", automod_run)
+    monkeypatch.setattr(
+        "rcon.blacklist.BlacklistCommandHandler",
+        mock.Mock(return_value=handler),
+    )
 
     run_program("automod", [])
     run_program("blacklists", [])
 
     automod_run.assert_called_once_with()
-    blacklists_run.assert_called_once_with()
+    handler.run.assert_called_once_with()
 
 
 def test_run_program_watch_killrate_success_and_failure(monkeypatch):
     called = mock.Mock()
-    monkeypatch.setattr("rcon.process_supervisor.programs.run_watch_killrate", called)
+    monkeypatch.setattr("rcon.watch_killrate.run", called)
     run_program("watch_killrate", [])
     called.assert_called_once_with()
 
     monkeypatch.setattr(
-        "rcon.process_supervisor.programs.run_watch_killrate",
-        mock.Mock(side_effect=SystemExit(1)),
+        "rcon.watch_killrate.run",
+        mock.Mock(side_effect=RuntimeError("watch")),
     )
     with pytest.raises(SystemExit) as exc:
         run_program("watch_killrate", [])
