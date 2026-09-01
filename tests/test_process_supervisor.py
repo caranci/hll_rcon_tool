@@ -27,9 +27,6 @@ from rcon.process_supervisor.rpc import start_rpc_server
 from rcon.process_supervisor.states import ProcessState
 
 
-RAW_EXEC_PROGRAMS = frozenset({"workers", "cron", "scheduler"})
-
-
 def test_interpolate_env_variable():
     assert interpolate("foo_%(ENV_SERVER_NUMBER)s.log", {"SERVER_NUMBER": "3"}) == "foo_3.log"
 
@@ -452,12 +449,13 @@ def _repo_supervisord_config() -> SupervisorConfig:
     return load_config(config_path, env)
 
 
-def test_registered_programs_match_supervisord_conf():
-    from rcon.process_supervisor.registry import REGISTERED_PROGRAMS
+def test_adapters_match_supervisord_conf():
+    from rcon.process_supervisor.registry import adapter_names, has_adapter
 
     config = _repo_supervisord_config()
-    python_programs = set(config.programs) - RAW_EXEC_PROGRAMS
-    assert REGISTERED_PROGRAMS == python_programs
+    assert adapter_names() <= set(config.programs)
+    for name in ("workers", "cron", "scheduler"):
+        assert not has_adapter(name)
 
 
 def test_command_extra_log_recorder_scoreboard_cron():
@@ -518,10 +516,10 @@ def test_worker_does_not_configure_arbiter_logging():
     assert "logging_setup" not in source
 
 
-def test_run_program_unknown_raises_keyerror():
+def test_run_program_unknown_raises_attribute_error():
     from rcon.process_supervisor.registry import run_program
 
-    with pytest.raises(KeyError):
+    with pytest.raises(AttributeError):
         run_program("not_a_program", [])
 
 

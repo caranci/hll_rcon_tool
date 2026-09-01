@@ -11,29 +11,27 @@ from rcon.process_supervisor.programs import (
     ensure_log_loop_hooks,
 )
 
-_PROGRAM_RUNNERS: dict[str, str] = {
-    "broadcasts": "run_broadcasts",
-    "expiring_vips": "run_expiring_vips",
-    "seed_vip": "run_seed_vip",
-    "log_event_loop": "run_log_event_loop",
-    "log_stream": "run_log_stream",
-    "log_recorder": "run_log_recorder",
-    "auto_settings": "run_auto_settings",
-    "routines": "run_routines",
-    "live_stats_refresh": "run_live_stats_refresh",
-    "scoreboard": "run_scoreboard",
-    "automod": "run_automod",
-    "blacklists": "run_blacklists",
-    "watch_killrate": "run_watch_killrate",
-}
 
-REGISTERED_PROGRAMS = frozenset(_PROGRAM_RUNNERS)
+def has_adapter(name: str) -> bool:
+    from rcon.process_supervisor import programs
+
+    return callable(getattr(programs, f"run_{name}", None))
+
+
+def adapter_names() -> frozenset[str]:
+    from rcon.process_supervisor import programs
+
+    return frozenset(
+        attr[4:]
+        for attr, obj in vars(programs).items()
+        if attr.startswith("run_") and callable(obj)
+    )
 
 
 def command_extra(program: ProgramConfig) -> list[str] | None:
     """Return extra argv for the worker, or None to spawn the INI command as-is."""
 
-    if program.name not in REGISTERED_PROGRAMS:
+    if not has_adapter(program.name):
         return None
 
     cmd = program.command
@@ -64,12 +62,9 @@ def worker_argv(program: ProgramConfig) -> list[str]:
 
 
 def run_program(name: str, extra: list[str]) -> None:
-    attr = _PROGRAM_RUNNERS.get(name)
-    if attr is None:
-        raise KeyError(name)
     from rcon.process_supervisor import programs
 
-    fn = getattr(programs, attr)
+    fn = getattr(programs, f"run_{name}")
     if name == "log_recorder":
         fn(extra)
     else:

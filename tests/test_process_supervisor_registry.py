@@ -8,8 +8,8 @@ os.environ.setdefault("SERVER_NUMBER", "1")
 
 from rcon.process_supervisor.config import ProgramConfig
 from rcon.process_supervisor.registry import (
-    REGISTERED_PROGRAMS,
     _parse_log_recorder_args,
+    adapter_names,
     command_extra,
     run_program,
 )
@@ -224,4 +224,4 @@ def test_all_registered_programs_have_dispatch_tests():
         "blacklists",
         "watch_killrate",
     }
-    assert covered == REGISTERED_PROGRAMS
+    assert covered == adapter_names()

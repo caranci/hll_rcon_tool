@@ -11,7 +11,7 @@ Each Supervisord child was a new interpreter that imported `rcon.cli`. That paid
 1. Dispatches by program name to a **supervisor-only adapter** (`programs.run_<name>`), which lazy-imports that service (broadcasts does not load automod, Discord, etc. at import time). Adapters may wrap `run()` with try/except, hook imports, or scoreboard sqlite bootstrap; they are not wired into `rcon.cli` until the arbiter is proven in production.
 2. Forks registered loops from a **forkserver** that has already mapped `hllrcon` and `rcon.maps`, so children share those pages via copy-on-write.
 
-INI `command=` lines stay as documentation / extra argv. Spawn is chosen by **program name**, not by executing the INI command for registered loops.
+INI `command=` lines stay as documentation / extra argv. Programs **with** a `run_<name>()` adapter in [`programs.py`](programs.py) use worker/fork spawn; programs **without** an adapter exec the INI `command=` as-is (e.g. `workers`, `cron`, `scheduler`).
 
 ## Runtime
 
@@ -31,7 +31,7 @@ python -m rcon.process_supervisor -c /config/supervisord.conf
                 |
     +-----------+-----------+
     |                       |
- registered + fork on    registered + fork off    name not in registry
+ adapter + fork on      adapter + fork off       no run_<name> adapter
  forkserver -> fork_main    Popen worker -m          Popen INI argv
                 |                       |                       |
                 +-----------+-----------+                       |
@@ -47,9 +47,9 @@ Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_super
 
 | Program set | Condition | Child | INI `command=` |
 | --- | --- | --- | --- |
-| `REGISTERED_PROGRAMS`, fork on | name in registry, `CRCON_SUPERVISOR_FORK` not disabled | `multiprocessing` forkserver → `fork_main` | Ignored except extra argv (`log_recorder -i 10`) |
-| `REGISTERED_PROGRAMS`, fork off | `CRCON_SUPERVISOR_FORK=0` (or `false` / `no` / `off`) | `Popen python -m rcon.process_supervisor.worker` | Same rewrite; new interpreter, no CoW |
-| `workers`, `cron`, `scheduler` | name not in registry | `Popen` of INI argv | Honored as-is |
+| Has `run_<name>` adapter, fork on | `has_adapter(name)` and `CRCON_SUPERVISOR_FORK` not disabled | `multiprocessing` forkserver → `fork_main` | Ignored except extra argv (`log_recorder -i 10`) |
+| Has `run_<name>` adapter, fork off | `CRCON_SUPERVISOR_FORK=0` (or `false` / `no` / `off`) | `Popen python -m rcon.process_supervisor.worker` | Same rewrite; new interpreter, no CoW |
+| No adapter | no `programs.run_<name>` | `Popen` of INI argv | Honored as-is |
 
 Fork is disabled on Windows. Do not fork from the RPC-threaded arbiter; the forkserver is a separate helper process.
 
@@ -98,15 +98,14 @@ Not implemented:
 
 ## Adding a Python loop
 
-Spawn is rewritten by **name**. A new loop needs all of:
+Opt-in is by code: add `run_<name>()` in [`programs.py`](programs.py). Long-term that entry point may live on the domain module; the supervisor still keys off the same `run_<name>` convention. A new forkable loop needs:
 
 1. `[program:your_name]` in [`config/supervisord.conf`](../../config/supervisord.conf)
-2. A `run_<name>` entry in `_PROGRAM_RUNNERS` in [`registry.py`](registry.py) pointing at a function in [`programs.py`](programs.py)
-3. Implement `run_<name>` in [`programs.py`](programs.py) with lazy imports and the same exception wrapping as `manage.py` / [`rcon/cli.py`](../../rcon/cli.py) today
+2. Implement `run_<name>()` in [`programs.py`](programs.py) with lazy imports and the same exception wrapping as `manage.py` / [`rcon/cli.py`](../../rcon/cli.py) today
 
 CLI is **not** wired to these adapters until the arbiter is proven in production; duplication with CLI wrappers is intentional for now.
 
-Custom `command=` flags on a registered name are dropped except the hand-rolled `log_recorder` argv parser in `programs.py`. Unregistered names still exec the INI command (use that for non-Python helpers).
+Custom `command=` flags on an adapted name are dropped except the hand-rolled `log_recorder` argv parser in `programs.py`. Names without a `run_<name>()` still exec the INI command (use that for non-Python helpers or until you add an adapter).
 
 ## Environment
 
@@ -128,7 +127,7 @@ Custom `command=` flags on a registered name are dropped except the hand-rolled 
 | [`process.py`](process.py) | State machine, Popen vs fork spawn, `killpg` |
 | [`preload.py`](preload.py) | Forkserver context; preload `hllrcon`, `rcon.maps` only |
 | [`programs.py`](programs.py) | Supervisor-only `run_<name>` adapters and hook/argv helpers |
-| [`registry.py`](registry.py) | Name set, argv rewrite, `_PROGRAM_RUNNERS` dispatch |
+| [`registry.py`](registry.py) | `has_adapter`, argv rewrite, `run_program` dispatch |
 | [`rpc.py`](rpc.py) | XML-RPC subset |
 | [`states.py`](states.py) | Supervisord state ints and fault codes |
 | [`worker/__main__.py`](worker/__main__.py) | Exec path: settings, unaccent, `run_program` |
