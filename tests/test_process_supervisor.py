@@ -382,6 +382,45 @@ def test_stop_does_not_hold_lock_during_wait(tmp_path):
     supervisor.stop_process("quick")
 
 
+def test_tick_reap_during_stop_sets_stopped(tmp_path):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    supervisor.start_process("demo")
+    proc = supervisor.get_process("demo")
+    proc.stop(wait=False)
+
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        supervisor.tick()
+        info = supervisor.get_process_info("demo")
+        if info["state"] == ProcessState.STOPPED:
+            break
+        time.sleep(0.05)
+
+    info = supervisor.get_process_info("demo")
+    assert info["state"] == ProcessState.STOPPED
+    assert info["statename"] == "STOPPED"
+    assert info["pid"] == 0
+
+
+def test_stop_wait_true_after_tick_reap(tmp_path):
+    supervisor = _make_supervisor(tmp_path, ["/bin/sleep", "30"], startsecs=0)
+    supervisor.start_process("demo")
+    proc = supervisor.get_process("demo")
+    proc.stop(wait=False)
+
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        supervisor.tick()
+        if proc.popen is None:
+            break
+        time.sleep(0.05)
+
+    proc.stop(wait=True)
+    info = supervisor.get_process_info("demo")
+    assert info["state"] == ProcessState.STOPPED
+    assert info["pid"] == 0
+
+
 def test_autostart_on_run(tmp_path):
     supervisor = _make_supervisor(
         tmp_path,

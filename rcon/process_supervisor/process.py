@@ -198,6 +198,7 @@ class ManagedProcess:
             os.killpg(self.popen.pid, sig)
         except ProcessLookupError:
             self._finalize_exit(0)
+            self.state = ProcessState.STOPPED
             return
 
         if not wait:
@@ -205,22 +206,32 @@ class ManagedProcess:
 
         deadline = time.time() + self.config.stopwaitsecs
         while time.time() < deadline:
-            if self.popen.poll() is not None:
-                self._finalize_exit(self.popen.returncode or 0)
+            child = self.popen
+            if child is None:
+                self.state = ProcessState.STOPPED
+                return
+            if child.poll() is not None:
+                self._finalize_exit(child.returncode or 0)
+                self.state = ProcessState.STOPPED
                 return
             time.sleep(0.05)
 
+        child = self.popen
+        if child is None:
+            self.state = ProcessState.STOPPED
+            return
         try:
-            os.killpg(self.popen.pid, signal.SIGKILL)
+            os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
 
         try:
-            self.popen.wait(timeout=1)
+            child.wait(timeout=1)
         except subprocess.TimeoutExpired:
             pass
 
-        self._finalize_exit(self.popen.returncode or 0)
+        self._finalize_exit(child.returncode or 0)
+        self.state = ProcessState.STOPPED
 
     def start(self, wait: bool = True) -> None:
         if self.is_running():
@@ -266,6 +277,7 @@ class ManagedProcess:
         exited_pid = self.pid
         if self.state == ProcessState.STOPPING:
             self._finalize_exit(returncode)
+            self.state = ProcessState.STOPPED
             logger.info(
                 "Process '%s' (pid %s) stopped with status %s",
                 self.config.name,
