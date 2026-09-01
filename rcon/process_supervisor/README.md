@@ -1,6 +1,6 @@
 # Process supervisor
 
-A small Python arbiter that replaces Supervisord in the CRCON supervisor container. It reads the existing `supervisord.conf` INI, speaks the XML-RPC subset the Services UI needs, and starts known Python loops **without** `manage.py` / `rcon.cli`. Registered loops can fork from a preloaded helper so extra services mostly add unique heap instead of another copy of the catalog.
+A small Python arbiter that can replace Supervisord in the CRCON supervisor container when enabled via `CRCON_USE_PROCESS_SUPERVISOR`. It reads the existing `supervisord.conf` INI, speaks the XML-RPC subset the Services UI needs, and starts known Python loops **without** `manage.py` / `rcon.cli`. Registered loops can fork from a preloaded helper so extra services mostly add unique heap instead of another copy of the catalog.
 
 Backend / gunicorn is out of scope. `workers` (rq), `cron`, and `scheduler` still exec their INI commands.
 
@@ -19,7 +19,11 @@ INI `command=` lines stay as documentation / extra argv. Programs **with** a `ru
 Container start (entrypoint.sh)
         |
         v
-python -m rcon.process_supervisor -c /config/supervisord.conf
+CRCON_USE_PROCESS_SUPERVISOR truthy?
+        |
+   yes  |  no
+        v   v
+python -m rcon.process_supervisor   supervisord
         |
         +-- parse INI (config.py)
         +-- arbiter log (logging_setup.py)
@@ -41,7 +45,7 @@ python -m rcon.process_supervisor -c /config/supervisord.conf
                    programs.run_<name>()
 ```
 
-Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_supervisor` instead of `supervisord`. Config path is `/config/supervisord_$SERVER_NUMBER.conf` if it exists, else `/config/supervisord.conf`.
+Entry: [`entrypoint.sh`](../../entrypoint.sh) runs `python -m rcon.process_supervisor` when `CRCON_USE_PROCESS_SUPERVISOR` is `1` / `true` / `yes` / `on`; otherwise it runs `supervisord`. Config path is `/config/supervisord_$SERVER_NUMBER.conf` if it exists, else `/config/supervisord.conf`.
 
 ## Spawn policy
 
@@ -111,8 +115,9 @@ Custom `command=` flags on an adapted name are dropped except the hand-rolled `l
 
 | Variable | Role |
 | --- | --- |
+| `CRCON_USE_PROCESS_SUPERVISOR` | Default off (`0` / unset). Set `1` / `true` / `yes` / `on` in `.env` to use this arbiter instead of Supervisord in the supervisor container |
 | `SERVER_NUMBER` | Numbered INI path `/config/supervisord_$SERVER_NUMBER.conf` |
-| `CRCON_SUPERVISOR_FORK` | Default on. Set `0` / `false` / `no` / `off` to exec workers instead of fork |
+| `CRCON_SUPERVISOR_FORK` | When this arbiter is active: default on. Set `0` / `false` / `no` / `off` to exec workers instead of fork |
 | `SUPERVISOR_RPC_URL` | Django → this arbiter |
 | `LOGGING_PATH` / `LOGGING_FILENAME` | Per-program child logs (from INI `environment=`) |
 
